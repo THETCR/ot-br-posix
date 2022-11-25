@@ -1636,8 +1636,11 @@ void DBusThreadObject::ActiveDatasetChangeHandler(const otOperationalDatasetTlvs
 
 void DBusThreadObject::LeaveNetworkHandler(DBusRequest &aRequest)
 {
+    constexpr int kExitCodeShouldRestart = 7;
+
     mNcp->GetThreadHelper()->DetachGracefully([aRequest, this](otError error) mutable {
         SuccessOrExit(error);
+        mPublisher->Stop();
         SuccessOrExit(error = otInstanceErasePersistentInfo(mNcp->GetThreadHelper()->GetInstance()));
 
     exit:
@@ -1645,7 +1648,7 @@ void DBusThreadObject::LeaveNetworkHandler(DBusRequest &aRequest)
         if (error == OT_ERROR_NONE)
         {
             Flush();
-            exit(0);
+            exit(kExitCodeShouldRestart);
         }
     });
 }
