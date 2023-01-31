@@ -58,13 +58,19 @@ install_packages_apt()
     sudo apt-get install --no-install-recommends -y libavahi-client3 libavahi-common-dev libavahi-client-dev avahi-daemon
     (MDNS_RESPONDER_SOURCE_NAME=mDNSResponder-1790.80.10 \
         && cd /tmp \
+        && git clone --recursive https://github.com/Mbed-TLS/mbedtls \
+        && cd mbedtls \
+        && make no_test \
+        && make no_test \
+        && sudo make install \
+        && cd ../ \
         && wget --no-check-certificate https://github.com/apple-oss-distributions/mDNSResponder/archive/refs/tags/$MDNS_RESPONDER_SOURCE_NAME.tar.gz \
         && mkdir -p $MDNS_RESPONDER_SOURCE_NAME \
         && tar xvf $MDNS_RESPONDER_SOURCE_NAME.tar.gz -C $MDNS_RESPONDER_SOURCE_NAME --strip-components=1 \
         && cd /tmp/$MDNS_RESPONDER_SOURCE_NAME/mDNSShared \
         && sed -i 's/__block //' uds_daemon.c \
         && cd /tmp/$MDNS_RESPONDER_SOURCE_NAME/mDNSPosix \
-        && make os=linux tls=no && sudo make install os=linux tls=no)
+        && make os=linux && sudo make install os=linux)
 
     # Boost
     sudo apt-get install --no-install-recommends -y libboost-dev libboost-filesystem-dev libboost-system-dev
