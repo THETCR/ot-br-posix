@@ -34,6 +34,8 @@
 #ifndef OTBR_DBUS_THREAD_OBJECT_HPP_
 #define OTBR_DBUS_THREAD_OBJECT_HPP_
 
+#include "openthread-br/config.h"
+
 #include <string>
 
 #include <openthread/link.h>
@@ -168,6 +170,7 @@ private:
     otError GetInfraLinkInfo(DBusMessageIter &aIter);
     otError GetDnsUpstreamQueryState(DBusMessageIter &aIter);
     otError GetTelemetryDataHandler(DBusMessageIter &aIter);
+    otError GetCapabilitiesHandler(DBusMessageIter &aIter);
 
     void ReplyScanResult(DBusRequest &aRequest, otError aError, const std::vector<otActiveScanResult> &aResult);
     void ReplyEnergyScanResult(DBusRequest &aRequest, otError aError, const std::vector<otEnergyScanResult> &aResult);
