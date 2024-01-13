@@ -174,35 +174,43 @@ exit:
 
 void Publisher::RemoveSubscriptionCallbacks(uint64_t aSubscriberId)
 {
-    size_t erased;
-
-    OTBR_UNUSED_VARIABLE(erased);
-
-    assert(aSubscriberId > 0);
-
-    erased = mDiscoveredCallbacks.erase(aSubscriberId);
-
-    assert(erased == 1);
+    mDiscoverCallbacks.remove_if(
+        [aSubscriberId](const DiscoverCallback &aCallback) { return (aCallback.mId == aSubscriberId); });
 }
 
 uint64_t Publisher::AddSubscriptionCallbacks(Publisher::DiscoveredServiceInstanceCallback aInstanceCallback,
                                              Publisher::DiscoveredHostCallback            aHostCallback)
 {
-    uint64_t subscriberId = mNextSubscriberId++;
+    uint64_t id = mNextSubscriberId++;
 
-    assert(subscriberId > 0);
+    assert(id > 0);
+    mDiscoverCallbacks.emplace_back(id, aInstanceCallback, aHostCallback);
 
-    mDiscoveredCallbacks.emplace(subscriberId, std::make_pair(std::move(aInstanceCallback), std::move(aHostCallback)));
-    return subscriberId;
+    return id;
 }
 
 void Publisher::OnServiceResolved(std::string aType, DiscoveredInstanceInfo aInstanceInfo)
 {
-    std::vector<uint64_t> subscriberIds;
+    bool checkToInvoke = false;
 
     otbrLogInfo("Service %s is resolved successfully: %s %s host %s addresses %zu", aType.c_str(),
                 aInstanceInfo.mRemoved ? "remove" : "add", aInstanceInfo.mName.c_str(), aInstanceInfo.mHostName.c_str(),
                 aInstanceInfo.mAddresses.size());
+
+    if (!aInstanceInfo.mRemoved)
+    {
+        std::string addressesString;
+
+        for (const auto &address : aInstanceInfo.mAddresses)
+        {
+            addressesString += address.ToString() + ",";
+        }
+        if (addressesString.size())
+        {
+            addressesString.pop_back();
+        }
+        otbrLogInfo("addresses: [ %s ]", addressesString.c_str());
+    }
 
     DnsUtils::CheckServiceNameSanity(aType);
 
@@ -216,22 +224,33 @@ void Publisher::OnServiceResolved(std::string aType, DiscoveredInstanceInfo aIns
     UpdateMdnsResponseCounters(mTelemetryInfo.mServiceResolutions, OTBR_ERROR_NONE);
     UpdateServiceInstanceResolutionEmaLatency(aInstanceInfo.mName, aType, OTBR_ERROR_NONE);
 
-    // In a callback, the mDiscoveredCallbacks may get changed which invalidates the running iterator. We need to refer
-    // to the callbacks by subscriberId to avoid invalid memory access.
-    subscriberIds.reserve(mDiscoveredCallbacks.size());
-    for (const auto &subCallback : mDiscoveredCallbacks)
+    // The `mDiscoverCallbacks` list can get updated as the callbacks
+    // are invoked. We first mark `mShouldInvoke` on all non-null
+    // service callbacks. We clear it before invoking the callback
+    // and restart the iteration over the `mDiscoverCallbacks` list
+    // to find the next one to signal, since the list may have changed.
+
+    for (DiscoverCallback &callback : mDiscoverCallbacks)
     {
-        subscriberIds.push_back(subCallback.first);
-    }
-    for (const auto &subscriberId : subscriberIds)
-    {
-        auto it = mDiscoveredCallbacks.find(subscriberId);
-        if (it != mDiscoveredCallbacks.end())
+        if (callback.mServiceCallback != nullptr)
         {
-            const auto &subCallback = *it;
-            if (subCallback.second.first != nullptr)
+            callback.mShouldInvoke = true;
+            checkToInvoke          = true;
+        }
+    }
+
+    while (checkToInvoke)
+    {
+        checkToInvoke = false;
+
+        for (DiscoverCallback &callback : mDiscoverCallbacks)
+        {
+            if (callback.mShouldInvoke)
             {
-                subCallback.second.first(aType, aInstanceInfo);
+                callback.mShouldInvoke = false;
+                checkToInvoke          = true;
+                callback.mServiceCallback(aType, aInstanceInfo);
+                break;
             }
         }
     }
@@ -252,6 +271,8 @@ void Publisher::OnServiceRemoved(uint32_t aNetifIndex, std::string aType, std::s
 
 void Publisher::OnHostResolved(std::string aHostName, Publisher::DiscoveredHostInfo aHostInfo)
 {
+    bool checkToInvoke = false;
+
     otbrLogInfo("Host %s is resolved successfully: host %s addresses %zu ttl %u", aHostName.c_str(),
                 aHostInfo.mHostName.c_str(), aHostInfo.mAddresses.size(), aHostInfo.mTtl);
 
@@ -263,11 +284,34 @@ void Publisher::OnHostResolved(std::string aHostName, Publisher::DiscoveredHostI
     UpdateMdnsResponseCounters(mTelemetryInfo.mHostResolutions, OTBR_ERROR_NONE);
     UpdateHostResolutionEmaLatency(aHostName, OTBR_ERROR_NONE);
 
-    for (const auto &subCallback : mDiscoveredCallbacks)
+    // The `mDiscoverCallbacks` list can get updated as the callbacks
+    // are invoked. We first mark `mShouldInvoke` on all non-null
+    // host callbacks. We clear it before invoking the callback
+    // and restart the iteration over the `mDiscoverCallbacks` list
+    // to find the next one to signal, since the list may have changed.
+
+    for (DiscoverCallback &callback : mDiscoverCallbacks)
     {
-        if (subCallback.second.second != nullptr)
+        if (callback.mHostCallback != nullptr)
         {
-            subCallback.second.second(aHostName, aHostInfo);
+            callback.mShouldInvoke = true;
+            checkToInvoke          = true;
+        }
+    }
+
+    while (checkToInvoke)
+    {
+        checkToInvoke = false;
+
+        for (DiscoverCallback &callback : mDiscoverCallbacks)
+        {
+            if (callback.mShouldInvoke)
+            {
+                callback.mShouldInvoke = false;
+                checkToInvoke          = true;
+                callback.mHostCallback(aHostName, aHostInfo);
+                break;
+            }
         }
     }
 }
@@ -587,6 +631,21 @@ void Publisher::UpdateHostResolutionEmaLatency(const std::string &aHostName, otb
         uint32_t latency = std::chrono::duration_cast<Milliseconds>(Clock::now() - it->second).count();
         UpdateEmaLatency(mTelemetryInfo.mHostResolutionEmaLatency, latency, aError);
         mHostResolutionBeginTime.erase(it);
+    }
+}
+
+void Publisher::AddAddress(AddressList &aAddressList, const Ip6Address &aAddress)
+{
+    aAddressList.push_back(aAddress);
+}
+
+void Publisher::RemoveAddress(AddressList &aAddressList, const Ip6Address &aAddress)
+{
+    auto it = std::find(aAddressList.begin(), aAddressList.end(), aAddress);
+
+    if (it != aAddressList.end())
+    {
+        aAddressList.erase(it);
     }
 }
 

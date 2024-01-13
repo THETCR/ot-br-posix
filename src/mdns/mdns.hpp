@@ -37,6 +37,7 @@
 #include "openthread-br/config.h"
 
 #include <functional>
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -135,6 +136,9 @@ public:
         uint16_t    mWeight   = 0;       ///< Service weight.
         TxtData     mTxtData;            ///< TXT RDATA bytes.
         uint32_t    mTtl = 0;            ///< Service TTL.
+
+        void AddAddress(const Ip6Address &aAddress) { Publisher::AddAddress(mAddresses, aAddress); }
+        void RemoveAddress(const Ip6Address &aAddress) { Publisher::RemoveAddress(mAddresses, aAddress); }
     };
 
     /**
@@ -143,9 +147,13 @@ public:
      */
     struct DiscoveredHostInfo
     {
-        std::string mHostName;  ///< Full host name.
-        AddressList mAddresses; ///< IP6 addresses.
-        uint32_t    mTtl = 0;   ///< Host TTL.
+        std::string mHostName;       ///< Full host name.
+        AddressList mAddresses;      ///< IP6 addresses.
+        uint32_t    mNetifIndex = 0; ///< Network interface.
+        uint32_t    mTtl        = 0; ///< Host TTL.
+
+        void AddAddress(const Ip6Address &aAddress) { Publisher::AddAddress(mAddresses, aAddress); }
+        void RemoveAddress(const Ip6Address &aAddress) { Publisher::RemoveAddress(mAddresses, aAddress); }
     };
 
     /**
@@ -572,12 +580,34 @@ protected:
                                                    otbrError          aError);
     void UpdateHostResolutionEmaLatency(const std::string &aHostName, otbrError aError);
 
+    static void AddAddress(AddressList &aAddressList, const Ip6Address &aAddress);
+    static void RemoveAddress(AddressList &aAddressList, const Ip6Address &aAddress);
+
     ServiceRegistrationMap mServiceRegistrations;
     HostRegistrationMap    mHostRegistrations;
 
+    struct DiscoverCallback
+    {
+        DiscoverCallback(uint64_t                          aId,
+                         DiscoveredServiceInstanceCallback aServiceCallback,
+                         DiscoveredHostCallback            aHostCallback)
+            : mId(aId)
+            , mServiceCallback(std::move(aServiceCallback))
+            , mHostCallback(std::move(aHostCallback))
+            , mShouldInvoke(false)
+        {
+        }
+
+        uint64_t                          mId;
+        DiscoveredServiceInstanceCallback mServiceCallback;
+        DiscoveredHostCallback            mHostCallback;
+        bool                              mShouldInvoke;
+    };
+
     uint64_t mNextSubscriberId = 1;
 
-    std::map<uint64_t, std::pair<DiscoveredServiceInstanceCallback, DiscoveredHostCallback>> mDiscoveredCallbacks;
+    std::list<DiscoverCallback> mDiscoverCallbacks;
+
     // {instance name, service type} -> the timepoint to begin service registration
     std::map<std::pair<std::string, std::string>, Timepoint> mServiceRegistrationBeginTime;
     // host name -> the timepoint to begin host registration
