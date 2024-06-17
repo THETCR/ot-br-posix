@@ -56,7 +56,7 @@
 #include "common/logging.hpp"
 #include "common/mainloop.hpp"
 #include "common/types.hpp"
-#include "ncp/ncp_openthread.hpp"
+#include "ncp/thread_host.hpp"
 
 static const char kDefaultInterfaceName[] = "wpan0";
 
@@ -176,17 +176,19 @@ static otbrLogLevel GetDefaultLogLevel(void)
 
 static void PrintRadioVersionAndExit(const std::vector<const char *> &aRadioUrls)
 {
-    otbr::Ncp::ControllerOpenThread ncpOpenThread{/* aInterfaceName */ "", aRadioUrls, /* aBackboneInterfaceName */ "",
-                                                  /* aDryRun */ true, /* aEnableAutoAttach */ false};
-    const char                     *radioVersion;
+    auto host = std::unique_ptr<otbr::Ncp::ThreadHost>(
+        otbr::Ncp::ThreadHost::Create(/* aInterfaceName */ "", aRadioUrls,
+                                      /* aBackboneInterfaceName */ "",
+                                      /* aDryRun */ true, /* aEnableAutoAttach */ false));
+    const char *coprocessorVersion;
 
-    ncpOpenThread.Init();
+    host->Init();
 
-    radioVersion = otPlatRadioGetVersionString(ncpOpenThread.GetInstance());
-    otbrLogNotice("Radio version: %s", radioVersion);
-    printf("%s\n", radioVersion);
+    coprocessorVersion = host->GetCoprocessorVersion();
+    otbrLogNotice("Co-processor version: %s", coprocessorVersion);
+    printf("%s\n", coprocessorVersion);
 
-    ncpOpenThread.Deinit();
+    host->Deinit();
 
     exit(EXIT_SUCCESS);
 }
@@ -279,7 +281,7 @@ static int realmain(int argc, char *argv[])
 
     otbrLogInit(argv[0], logLevel, verbose, syslogDisable);
     otbrLogNotice("Running %s", OTBR_PACKAGE_VERSION);
-    otbrLogNotice("Thread version: %s", otbr::Ncp::ControllerOpenThread::GetThreadVersion());
+    otbrLogNotice("Thread version: %s", otbr::Ncp::RcpHost::GetThreadVersion());
     otbrLogNotice("Thread interface: %s", interfaceName);
 
     if (backboneInterfaceNames.empty())
