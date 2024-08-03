@@ -27,6 +27,12 @@
 #
 
 add_library(otbr-ncp
+    async_task.cpp
+    async_task.hpp
+    ncp_host.cpp
+    ncp_host.hpp
+    ncp_spinel.cpp
+    ncp_spinel.hpp
     rcp_host.cpp
     rcp_host.hpp
     thread_host.cpp

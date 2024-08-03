@@ -42,6 +42,8 @@
 #include <string>
 #include <vector>
 
+#include <openthread/error.h>
+
 #include "common/byteswap.hpp"
 
 #ifndef IN6ADDR_ANY
@@ -168,6 +170,16 @@ public:
      *
      */
     bool operator==(const Ip6Address &aOther) const { return m64[0] == aOther.m64[0] && m64[1] == aOther.m64[1]; }
+
+    /**
+     * This method overloads `!=` operator and compares if the Ip6 address is NOT equal to the other address.
+     *
+     * @param[in] aOther  The other Ip6 address to compare with.
+     *
+     * @returns Whether the Ip6 address is NOT equal to the other address.
+     *
+     */
+    bool operator!=(const Ip6Address &aOther) const { return !(*this == aOther); }
 
     /**
      * Retrieve the 16-bit Thread locator.
@@ -350,6 +362,16 @@ public:
     bool operator==(const Ip6Prefix &aOther) const;
 
     /**
+     * This method overloads `!=` operator for comparing two Ip6Prefix objects.
+
+     * @param[in] aOther The Ip6Prefix object to compare with.
+     *
+     * @returns True if the two objects are NOT equal, false otherwise.
+     *
+     */
+    bool operator!=(const Ip6Prefix &aOther) const;
+
+    /**
      * This method sets the Ip6 prefix to an `otIp6Prefix` value.
      *
      * @param[in] aPrefix  The `otIp6Prefix` value to set the Ip6 prefix.
@@ -468,6 +490,16 @@ struct MdnsTelemetryInfo
 static constexpr size_t kVendorOuiLength      = 3;
 static constexpr size_t kMaxVendorNameLength  = 24;
 static constexpr size_t kMaxProductNameLength = 24;
+
+/**
+ * This method converts a otbrError to a otError.
+ *
+ * @param[in]  aError  a otbrError code.
+ *
+ * @returns  a otError code.
+ *
+ */
+otError OtbrErrorToOtError(otbrError aError);
 
 } // namespace otbr
 
