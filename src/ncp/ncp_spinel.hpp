@@ -83,6 +83,8 @@ public:
 class NcpSpinel
 {
 public:
+    using Ip6AddressTableCallback = std::function<void(const std::vector<Ip6AddressInfo> &)>;
+
     /**
      * Constructor.
      *
@@ -123,6 +125,19 @@ public:
     void DatasetSetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs, AsyncTaskPtr aAsyncTask);
 
     /**
+     * This method instructs the NCP to send a MGMT_SET to set Thread Pending Operational Dataset.
+     *
+     * If this method is called again before the previous call completed, no action will be taken.
+     * The new receiver @p aAsyncTask will be set a result OT_ERROR_BUSY.
+     *
+     * @param[in] aPendingOpDatasetTlvsPtr  A shared pointer to the pending operational dataset of the Thread network.
+     * @param[in] aAsyncTask                A pointer to an async result to receive the result of this operation.
+     *
+     */
+    void DatasetMgmtSetPending(std::shared_ptr<otOperationalDatasetTlvs> aPendingOpDatasetTlvsPtr,
+                               AsyncTaskPtr                              aAsyncTask);
+
+    /**
      * This method enableds/disables the IP6 on the NCP.
      *
      * If this method is called again before the previous call completed, no action will be taken.
@@ -133,6 +148,18 @@ public:
      *
      */
     void Ip6SetEnabled(bool aEnable, AsyncTaskPtr aAsyncTask);
+
+    /**
+     * This method sets the callback to receive the IPv6 address table from the NCP.
+     *
+     * The callback will be invoked when receiving an IPv6 address table from the NCP. When the
+     * callback is invoked, the callback MUST copy the otIp6AddressInfo objects and maintain it
+     * if it's not used immediately (within the callback).
+     *
+     * @param[in] aCallback  The callback to handle the IP6 address table.
+     *
+     */
+    void Ip6SetAddressCallback(const Ip6AddressTableCallback &aCallback) { mIp6AddressTableCallback = aCallback; }
 
     /**
      * This method enableds/disables the Thread network on the NCP.
@@ -173,12 +200,11 @@ private:
 
     static constexpr uint8_t kMaxTids = 16;
 
-    template <typename Function, typename... Args> static void CallAndClear(Function &aFunc, Args &&...aArgs)
+    template <typename Function, typename... Args> static void SafeInvoke(Function &aFunc, Args &&...aArgs)
     {
         if (aFunc)
         {
             aFunc(std::forward<Args>(aArgs)...);
-            aFunc = nullptr;
         }
     }
 
@@ -203,21 +229,22 @@ private:
 
     static otDeviceRole SpinelRoleToDeviceRole(spinel_net_role_t aRole);
 
-    void HandleNotification(const uint8_t *aFrame, uint16_t aLength);
-    void HandleResponse(spinel_tid_t aTid, const uint8_t *aFrame, uint16_t aLength);
-    void HandleValueIs(spinel_prop_key_t aKey, const uint8_t *aBuffer, uint16_t aLength);
-    void HandleResponseForCommand(spinel_tid_t aTid, otError aError);
+    void      HandleNotification(const uint8_t *aFrame, uint16_t aLength);
+    void      HandleResponse(spinel_tid_t aTid, const uint8_t *aFrame, uint16_t aLength);
+    void      HandleValueIs(spinel_prop_key_t aKey, const uint8_t *aBuffer, uint16_t aLength);
+    otbrError HandleResponseForPropSet(spinel_tid_t      aTid,
+                                       spinel_prop_key_t aKey,
+                                       const uint8_t    *aData,
+                                       uint16_t          aLength);
 
     spinel_tid_t GetNextTid(void);
-    void         FreeTid(spinel_tid_t tid) { mCmdTidsInUse &= ~(1 << tid); }
+    void         FreeTidTableItem(spinel_tid_t aTid);
 
     using EncodingFunc = std::function<otError(void)>;
     otError SetProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc);
     otError SendEncodedFrame(void);
 
-    void GetFlagsFromSecurityPolicy(const otSecurityPolicy *aSecurityPolicy, uint8_t *aFlags, uint8_t aFlagsLength);
-
-    otError EncodeDatasetSetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs);
+    otError ParseIp6AddressTable(const uint8_t *aBuf, uint16_t aLength, std::vector<Ip6AddressInfo> &aAddressTable);
 
     ot::Spinel::SpinelDriver *mSpinelDriver;
     uint16_t                  mCmdTidsInUse; ///< Used transaction ids.
@@ -238,10 +265,13 @@ private:
     PropsObserver *mPropsObserver;
 
     AsyncTaskPtr mDatasetSetActiveTask;
+    AsyncTaskPtr mDatasetMgmtSetPendingTask;
     AsyncTaskPtr mIp6SetEnabledTask;
     AsyncTaskPtr mThreadSetEnabledTask;
     AsyncTaskPtr mThreadDetachGracefullyTask;
     AsyncTaskPtr mThreadErasePersistentInfoTask;
+
+    Ip6AddressTableCallback mIp6AddressTableCallback;
 };
 
 } // namespace Ncp
