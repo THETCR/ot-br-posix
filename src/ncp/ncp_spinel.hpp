@@ -50,13 +50,14 @@
 #include "common/task_runner.hpp"
 #include "common/types.hpp"
 #include "ncp/async_task.hpp"
+#include "ncp/posix/infra_if.hpp"
+#include "ncp/posix/netif.hpp"
 
 namespace otbr {
 namespace Ncp {
 
 /**
  * This interface is an observer to subscribe the network properties from NCP.
- *
  */
 class PropsObserver
 {
@@ -65,29 +66,36 @@ public:
      * Updates the device role.
      *
      * @param[in] aRole  The device role.
-     *
      */
     virtual void SetDeviceRole(otDeviceRole aRole) = 0;
 
     /**
-     * The destructor.
+     * Updates the active dataset.
      *
+     * @param[in] aActiveOpDatasetTlvs  The active dataset tlvs.
+     */
+    virtual void SetDatasetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs) = 0;
+
+    /**
+     * The destructor.
      */
     virtual ~PropsObserver(void) = default;
 };
 
 /**
  * The class provides methods for controlling the Thread stack on the network co-processor (NCP).
- *
  */
-class NcpSpinel
+class NcpSpinel : public Netif::Dependencies, public InfraIf::Dependencies
 {
 public:
-    using Ip6AddressTableCallback = std::function<void(const std::vector<Ip6AddressInfo> &)>;
+    using Ip6AddressTableCallback          = std::function<void(const std::vector<Ip6AddressInfo> &)>;
+    using Ip6MulticastAddressTableCallback = std::function<void(const std::vector<Ip6Address> &)>;
+    using NetifStateChangedCallback        = std::function<void(bool)>;
+    using Ip6ReceiveCallback               = std::function<void(const uint8_t *, uint16_t)>;
+    using InfraIfSendIcmp6NdCallback = std::function<void(uint32_t, const otIp6Address &, const uint8_t *, uint16_t)>;
 
     /**
      * Constructor.
-     *
      */
     NcpSpinel(void);
 
@@ -96,19 +104,16 @@ public:
      *
      * @param[in]  aSpinelDriver   A reference to the SpinelDriver instance that this object depends.
      * @param[in]  aObserver       A reference to the Network properties observer.
-     *
      */
     void Init(ot::Spinel::SpinelDriver &aSpinelDriver, PropsObserver &aObserver);
 
     /**
      * Do the de-initialization.
-     *
      */
     void Deinit(void);
 
     /**
      * Returns the Co-processor version string.
-     *
      */
     const char *GetCoprocessorVersion(void) { return mSpinelDriver->GetVersion(); }
 
@@ -120,7 +125,6 @@ public:
      *
      * @param[in] aActiveOpDatasetTlvs  A reference to the active operational dataset of the Thread network.
      * @param[in] aAsyncTask            A pointer to an async result to receive the result of this operation.
-     *
      */
     void DatasetSetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs, AsyncTaskPtr aAsyncTask);
 
@@ -132,7 +136,6 @@ public:
      *
      * @param[in] aPendingOpDatasetTlvsPtr  A shared pointer to the pending operational dataset of the Thread network.
      * @param[in] aAsyncTask                A pointer to an async result to receive the result of this operation.
-     *
      */
     void DatasetMgmtSetPending(std::shared_ptr<otOperationalDatasetTlvs> aPendingOpDatasetTlvsPtr,
                                AsyncTaskPtr                              aAsyncTask);
@@ -145,7 +148,6 @@ public:
      *
      * @param[in] aEnable     TRUE to enable and FALSE to disable.
      * @param[in] aAsyncTask  A pointer to an async result to receive the result of this operation.
-     *
      */
     void Ip6SetEnabled(bool aEnable, AsyncTaskPtr aAsyncTask);
 
@@ -157,9 +159,40 @@ public:
      * if it's not used immediately (within the callback).
      *
      * @param[in] aCallback  The callback to handle the IP6 address table.
-     *
      */
     void Ip6SetAddressCallback(const Ip6AddressTableCallback &aCallback) { mIp6AddressTableCallback = aCallback; }
+
+    /**
+     * This method sets the callback to receive the IPv6 multicast address table from the NCP.
+     *
+     * @param[in] aCallback  The callback to handle the IPv6 address table.
+     *
+     * The callback will be invoked when receiving an IPv6 multicast address table from the NCP.
+     * When the callback is invoked, the callback MUST copy the otIp6Address objects and maintain it
+     * if it's not used immediately (within the callback).
+     */
+    void Ip6SetAddressMulticastCallback(const Ip6MulticastAddressTableCallback &aCallback)
+    {
+        mIp6MulticastAddressTableCallback = aCallback;
+    }
+
+    /**
+     * This method sets the callback to receive IP6 datagrams.
+     *
+     * @param[in] aCallback  The callback to receive IP6 datagrams.
+     */
+    void Ip6SetReceiveCallback(const Ip6ReceiveCallback &aCallback) { mIp6ReceiveCallback = aCallback; }
+
+    /**
+     * This methods sends an IP6 datagram through the NCP.
+     *
+     * @param[in] aData      A pointer to the beginning of the IP6 datagram.
+     * @param[in] aLength    The length of the datagram.
+     *
+     * @retval OTBR_ERROR_NONE  The datagram is sent to NCP successfully.
+     * @retval OTBR_ERROR_BUSY  NcpSpinel is busy with other requests.
+     */
+    otbrError Ip6Send(const uint8_t *aData, uint16_t aLength) override;
 
     /**
      * This method enableds/disables the Thread network on the NCP.
@@ -169,7 +202,6 @@ public:
      *
      * @param[in] aEnable     TRUE to enable and FALSE to disable.
      * @param[in] aAsyncTask  A pointer to an async result to receive the result of this operation.
-     *
      */
     void ThreadSetEnabled(bool aEnable, AsyncTaskPtr aAsyncTask);
 
@@ -180,7 +212,6 @@ public:
      * The new receiver @p aAsyncTask will be set a result OT_ERROR_BUSY.
      *
      * @param[in] aAsyncTask  A pointer to an async result to receive the result of this operation.
-     *
      */
     void ThreadDetachGracefully(AsyncTaskPtr aAsyncTask);
 
@@ -191,9 +222,28 @@ public:
      * The new receiver @p aAsyncTask will be set a result OT_ERROR_BUSY.
      *
      * @param[in] aAsyncTask  A pointer to an async result to receive the result of this operation.
-     *
      */
     void ThreadErasePersistentInfo(AsyncTaskPtr aAsyncTask);
+
+    /**
+     * This method sets the callback invoked when the network interface state changes.
+     *
+     * @param[in] aCallback  The callback invoked when the network interface state changes.
+     */
+    void NetifSetStateChangedCallback(const NetifStateChangedCallback &aCallback)
+    {
+        mNetifStateChangedCallback = aCallback;
+    }
+
+    /**
+     * This method sets the function to send an Icmp6 ND message on the infrastructure link.
+     *
+     * @param[in] aCallback  The callback to send an Icmp6 ND message on the infrastructure link.
+     */
+    void InfraIfSetIcmp6NdSendCallback(const InfraIfSendIcmp6NdCallback &aCallback)
+    {
+        mInfraIfIcmp6NdCallback = aCallback;
+    }
 
 private:
     using FailureHandler = std::function<void(otError)>;
@@ -236,15 +286,48 @@ private:
                                        spinel_prop_key_t aKey,
                                        const uint8_t    *aData,
                                        uint16_t          aLength);
+    otbrError HandleResponseForPropInsert(spinel_tid_t      aTid,
+                                          spinel_command_t  aCmd,
+                                          spinel_prop_key_t aKey,
+                                          const uint8_t    *aData,
+                                          uint16_t          aLength);
+    otbrError HandleResponseForPropRemove(spinel_tid_t      aTid,
+                                          spinel_command_t  aCmd,
+                                          spinel_prop_key_t aKey,
+                                          const uint8_t    *aData,
+                                          uint16_t          aLength);
+
+    otbrError Ip6MulAddrUpdateSubscription(const otIp6Address &aAddress, bool aIsAdded) override;
 
     spinel_tid_t GetNextTid(void);
     void         FreeTidTableItem(spinel_tid_t aTid);
 
-    using EncodingFunc = std::function<otError(void)>;
+    using EncodingFunc = std::function<otError(ot::Spinel::Encoder &aEncoder)>;
+    otError SendCommand(spinel_command_t aCmd, spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc);
     otError SetProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc);
+    otError InsertProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc);
+    otError RemoveProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc);
+
     otError SendEncodedFrame(void);
 
     otError ParseIp6AddressTable(const uint8_t *aBuf, uint16_t aLength, std::vector<Ip6AddressInfo> &aAddressTable);
+    otError ParseIp6MulticastAddresses(const uint8_t *aBuf, uint16_t aLen, std::vector<Ip6Address> &aAddressList);
+    otError ParseIp6StreamNet(const uint8_t *aBuf, uint16_t aLen, const uint8_t *&aData, uint16_t &aDataLen);
+    otError ParseOperationalDatasetTlvs(const uint8_t *aBuf, uint16_t aLen, otOperationalDatasetTlvs &aDatasetTlvs);
+    otError ParseInfraIfIcmp6Nd(const uint8_t       *aBuf,
+                                uint8_t              aLen,
+                                uint32_t            &aInfraIfIndex,
+                                const otIp6Address *&aAddr,
+                                const uint8_t      *&aData,
+                                uint16_t            &aDataLen);
+
+    otbrError SetInfraIf(uint32_t                       aInfraIfIndex,
+                         bool                           aIsRunning,
+                         const std::vector<Ip6Address> &aIp6Addresses) override;
+    otbrError HandleIcmp6Nd(uint32_t          aInfraIfIndex,
+                            const Ip6Address &aIp6Address,
+                            const uint8_t    *aData,
+                            uint16_t          aDataLen) override;
 
     ot::Spinel::SpinelDriver *mSpinelDriver;
     uint16_t                  mCmdTidsInUse; ///< Used transaction ids.
@@ -271,7 +354,11 @@ private:
     AsyncTaskPtr mThreadDetachGracefullyTask;
     AsyncTaskPtr mThreadErasePersistentInfoTask;
 
-    Ip6AddressTableCallback mIp6AddressTableCallback;
+    Ip6AddressTableCallback          mIp6AddressTableCallback;
+    Ip6MulticastAddressTableCallback mIp6MulticastAddressTableCallback;
+    Ip6ReceiveCallback               mIp6ReceiveCallback;
+    NetifStateChangedCallback        mNetifStateChangedCallback;
+    InfraIfSendIcmp6NdCallback       mInfraIfIcmp6NdCallback;
 };
 
 } // namespace Ncp

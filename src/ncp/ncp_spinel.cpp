@@ -42,6 +42,7 @@
 #include "lib/spinel/spinel.h"
 #include "lib/spinel/spinel_decoder.hpp"
 #include "lib/spinel/spinel_driver.hpp"
+#include "lib/spinel/spinel_encoder.hpp"
 #include "lib/spinel/spinel_helper.hpp"
 
 namespace otbr {
@@ -72,7 +73,9 @@ void NcpSpinel::Init(ot::Spinel::SpinelDriver &aSpinelDriver, PropsObserver &aOb
 
 void NcpSpinel::Deinit(void)
 {
-    mSpinelDriver = nullptr;
+    mSpinelDriver              = nullptr;
+    mIp6AddressTableCallback   = nullptr;
+    mNetifStateChangedCallback = nullptr;
 }
 
 otbrError NcpSpinel::SpinelDataUnpack(const uint8_t *aDataIn, spinel_size_t aDataLen, const char *aPackFormat, ...)
@@ -94,8 +97,8 @@ exit:
 void NcpSpinel::DatasetSetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs, AsyncTaskPtr aAsyncTask)
 {
     otError      error        = OT_ERROR_NONE;
-    EncodingFunc encodingFunc = [this, &aActiveOpDatasetTlvs] {
-        return mEncoder.WriteData(aActiveOpDatasetTlvs.mTlvs, aActiveOpDatasetTlvs.mLength);
+    EncodingFunc encodingFunc = [&aActiveOpDatasetTlvs](ot::Spinel::Encoder &aEncoder) {
+        return aEncoder.WriteData(aActiveOpDatasetTlvs.mTlvs, aActiveOpDatasetTlvs.mLength);
     };
 
     VerifyOrExit(mDatasetSetActiveTask == nullptr, error = OT_ERROR_BUSY);
@@ -114,8 +117,8 @@ void NcpSpinel::DatasetMgmtSetPending(std::shared_ptr<otOperationalDatasetTlvs> 
                                       AsyncTaskPtr                              aAsyncTask)
 {
     otError      error        = OT_ERROR_NONE;
-    EncodingFunc encodingFunc = [this, aPendingOpDatasetTlvsPtr] {
-        return mEncoder.WriteData(aPendingOpDatasetTlvsPtr->mTlvs, aPendingOpDatasetTlvsPtr->mLength);
+    EncodingFunc encodingFunc = [aPendingOpDatasetTlvsPtr](ot::Spinel::Encoder &aEncoder) {
+        return aEncoder.WriteData(aPendingOpDatasetTlvsPtr->mTlvs, aPendingOpDatasetTlvsPtr->mLength);
     };
 
     VerifyOrExit(mDatasetMgmtSetPendingTask == nullptr, error = OT_ERROR_BUSY);
@@ -133,7 +136,7 @@ exit:
 void NcpSpinel::Ip6SetEnabled(bool aEnable, AsyncTaskPtr aAsyncTask)
 {
     otError      error        = OT_ERROR_NONE;
-    EncodingFunc encodingFunc = [this, aEnable] { return mEncoder.WriteBool(aEnable); };
+    EncodingFunc encodingFunc = [aEnable](ot::Spinel::Encoder &aEncoder) { return aEncoder.WriteBool(aEnable); };
 
     VerifyOrExit(mIp6SetEnabledTask == nullptr, error = OT_ERROR_BUSY);
 
@@ -149,10 +152,23 @@ exit:
     return;
 }
 
+otbrError NcpSpinel::Ip6Send(const uint8_t *aData, uint16_t aLength)
+{
+    otbrError    error        = OTBR_ERROR_NONE;
+    EncodingFunc encodingFunc = [aData, aLength](ot::Spinel::Encoder &aEncoder) {
+        return aEncoder.WriteDataWithLen(aData, aLength);
+    };
+
+    SuccessOrExit(SetProperty(SPINEL_PROP_STREAM_NET, encodingFunc), error = OTBR_ERROR_OPENTHREAD);
+
+exit:
+    return error;
+}
+
 void NcpSpinel::ThreadSetEnabled(bool aEnable, AsyncTaskPtr aAsyncTask)
 {
     otError      error        = OT_ERROR_NONE;
-    EncodingFunc encodingFunc = [this, aEnable] { return mEncoder.WriteBool(aEnable); };
+    EncodingFunc encodingFunc = [aEnable](ot::Spinel::Encoder &aEncoder) { return aEncoder.WriteBool(aEnable); };
 
     VerifyOrExit(mThreadSetEnabledTask == nullptr, error = OT_ERROR_BUSY);
 
@@ -171,7 +187,7 @@ exit:
 void NcpSpinel::ThreadDetachGracefully(AsyncTaskPtr aAsyncTask)
 {
     otError      error        = OT_ERROR_NONE;
-    EncodingFunc encodingFunc = [] { return OT_ERROR_NONE; };
+    EncodingFunc encodingFunc = [](ot::Spinel::Encoder &) { return OT_ERROR_NONE; };
 
     VerifyOrExit(mThreadDetachGracefullyTask == nullptr, error = OT_ERROR_BUSY);
 
@@ -260,7 +276,7 @@ void NcpSpinel::HandleNotification(const uint8_t *aFrame, uint16_t aLength)
     HandleValueIs(key, data, static_cast<uint16_t>(len));
 
 exit:
-    otbrLogResult(error, "HandleNotification: %s", __FUNCTION__);
+    otbrLogResult(error, "%s", __FUNCTION__);
 }
 
 void NcpSpinel::HandleResponse(spinel_tid_t aTid, const uint8_t *aFrame, uint16_t aLength)
@@ -275,13 +291,21 @@ void NcpSpinel::HandleResponse(spinel_tid_t aTid, const uint8_t *aFrame, uint16_
 
     SuccessOrExit(error = SpinelDataUnpack(aFrame, aLength, kSpinelDataUnpackFormat, &header, &cmd, &key, &data, &len));
 
-    VerifyOrExit(cmd == SPINEL_CMD_PROP_VALUE_IS, error = OTBR_ERROR_INVALID_STATE);
-
     switch (mCmdTable[aTid])
     {
     case SPINEL_CMD_PROP_VALUE_SET:
     {
         error = HandleResponseForPropSet(aTid, key, data, len);
+        break;
+    }
+    case SPINEL_CMD_PROP_VALUE_INSERT:
+    {
+        error = HandleResponseForPropInsert(aTid, cmd, key, data, len);
+        break;
+    }
+    case SPINEL_CMD_PROP_VALUE_REMOVE:
+    {
+        error = HandleResponseForPropRemove(aTid, cmd, key, data, len);
         break;
     }
     case SPINEL_CMD_NET_CLEAR:
@@ -364,6 +388,47 @@ void NcpSpinel::HandleValueIs(spinel_prop_key_t aKey, const uint8_t *aBuffer, ui
         break;
     }
 
+    case SPINEL_PROP_IPV6_MULTICAST_ADDRESS_TABLE:
+    {
+        std::vector<Ip6Address> addressTable;
+
+        VerifyOrExit(ParseIp6MulticastAddresses(aBuffer, aLength, addressTable) == OT_ERROR_NONE,
+                     error = OTBR_ERROR_PARSE);
+        SafeInvoke(mIp6MulticastAddressTableCallback, addressTable);
+        break;
+    }
+
+    case SPINEL_PROP_NET_IF_UP:
+    {
+        bool isUp;
+        SuccessOrExit(error = SpinelDataUnpack(aBuffer, aLength, SPINEL_DATATYPE_BOOL_S, &isUp));
+        SafeInvoke(mNetifStateChangedCallback, isUp);
+        break;
+    }
+
+    case SPINEL_PROP_STREAM_NET:
+    {
+        const uint8_t *data;
+        uint16_t       dataLen;
+
+        SuccessOrExit(ParseIp6StreamNet(aBuffer, aLength, data, dataLen), error = OTBR_ERROR_PARSE);
+        SafeInvoke(mIp6ReceiveCallback, data, dataLen);
+        break;
+    }
+
+    case SPINEL_PROP_INFRA_IF_SEND_ICMP6:
+    {
+        uint32_t            infraIfIndex;
+        const otIp6Address *destAddress;
+        const uint8_t      *data;
+        uint16_t            dataLen;
+
+        SuccessOrExit(ParseInfraIfIcmp6Nd(aBuffer, aLength, infraIfIndex, destAddress, data, dataLen),
+                      error = OTBR_ERROR_PARSE);
+        SafeInvoke(mInfraIfIcmp6NdCallback, infraIfIndex, *destAddress, data, dataLen);
+        break;
+    }
+
     default:
         otbrLogWarning("Received uncognized key: %u", aKey);
         break;
@@ -382,18 +447,30 @@ otbrError NcpSpinel::HandleResponseForPropSet(spinel_tid_t      aTid,
     OTBR_UNUSED_VARIABLE(aData);
     OTBR_UNUSED_VARIABLE(aLength);
 
-    otbrError error = OTBR_ERROR_NONE;
+    otbrError       error  = OTBR_ERROR_NONE;
+    spinel_status_t status = SPINEL_STATUS_OK;
 
     switch (mWaitingKeyTable[aTid])
     {
     case SPINEL_PROP_THREAD_ACTIVE_DATASET_TLVS:
         VerifyOrExit(aKey == SPINEL_PROP_THREAD_ACTIVE_DATASET_TLVS, error = OTBR_ERROR_INVALID_STATE);
         CallAndClear(mDatasetSetActiveTask, OT_ERROR_NONE);
+        {
+            otOperationalDatasetTlvs datasetTlvs;
+            VerifyOrExit(ParseOperationalDatasetTlvs(aData, aLength, datasetTlvs) == OT_ERROR_NONE,
+                         error = OTBR_ERROR_PARSE);
+            mPropsObserver->SetDatasetActiveTlvs(datasetTlvs);
+        }
         break;
 
     case SPINEL_PROP_NET_IF_UP:
         VerifyOrExit(aKey == SPINEL_PROP_NET_IF_UP, error = OTBR_ERROR_INVALID_STATE);
         CallAndClear(mIp6SetEnabledTask, OT_ERROR_NONE);
+        {
+            bool isUp;
+            SuccessOrExit(error = SpinelDataUnpack(aData, aLength, SPINEL_DATATYPE_BOOL_S, &isUp));
+            SafeInvoke(mNetifStateChangedCallback, isUp);
+        }
         break;
 
     case SPINEL_PROP_NET_STACK_UP:
@@ -404,8 +481,6 @@ otbrError NcpSpinel::HandleResponseForPropSet(spinel_tid_t      aTid,
     case SPINEL_PROP_THREAD_MGMT_SET_PENDING_DATASET_TLVS:
         if (aKey == SPINEL_PROP_LAST_STATUS)
         { // Failed case
-            spinel_status_t status = SPINEL_STATUS_OK;
-
             SuccessOrExit(error = SpinelDataUnpack(aData, aLength, SPINEL_DATATYPE_UINT_PACKED_S, &status));
             CallAndClear(mDatasetMgmtSetPendingTask, ot::Spinel::SpinelStatusToOtError(status));
         }
@@ -415,9 +490,112 @@ otbrError NcpSpinel::HandleResponseForPropSet(spinel_tid_t      aTid,
         }
         break;
 
+    case SPINEL_PROP_STREAM_NET:
+        break;
+
+    case SPINEL_PROP_INFRA_IF_STATE:
+        VerifyOrExit(aKey == SPINEL_PROP_LAST_STATUS, error = OTBR_ERROR_INVALID_STATE);
+        SuccessOrExit(error = SpinelDataUnpack(aData, aLength, SPINEL_DATATYPE_UINT_PACKED_S, &status));
+        otbrLogInfo("Infra If state update result: %s", spinel_status_to_cstr(status));
+        break;
+
+    case SPINEL_PROP_INFRA_IF_RECV_ICMP6:
+        VerifyOrExit(aKey == SPINEL_PROP_LAST_STATUS, error = OTBR_ERROR_INVALID_STATE);
+        SuccessOrExit(error = SpinelDataUnpack(aData, aLength, SPINEL_DATATYPE_UINT_PACKED_S, &status));
+        otbrLogInfo("Infra If handle ICMP6 ND result: %s", spinel_status_to_cstr(status));
+        break;
+
     default:
         VerifyOrExit(aKey == mWaitingKeyTable[aTid], error = OTBR_ERROR_INVALID_STATE);
         break;
+    }
+
+exit:
+    return error;
+}
+
+otbrError NcpSpinel::HandleResponseForPropInsert(spinel_tid_t      aTid,
+                                                 spinel_command_t  aCmd,
+                                                 spinel_prop_key_t aKey,
+                                                 const uint8_t    *aData,
+                                                 uint16_t          aLength)
+{
+    otbrError error = OTBR_ERROR_NONE;
+
+    switch (mWaitingKeyTable[aTid])
+    {
+    case SPINEL_PROP_IPV6_MULTICAST_ADDRESS_TABLE:
+        if (aCmd == SPINEL_CMD_PROP_VALUE_IS)
+        {
+            spinel_status_t status = SPINEL_STATUS_OK;
+
+            VerifyOrExit(aKey == SPINEL_PROP_LAST_STATUS, error = OTBR_ERROR_INVALID_STATE);
+            SuccessOrExit(error = SpinelDataUnpack(aData, aLength, SPINEL_DATATYPE_UINT_PACKED_S, &status));
+            otbrLogInfo("Failed to subscribe to multicast address on NCP, error:%s", spinel_status_to_cstr(status));
+        }
+        else
+        {
+            error = aCmd == SPINEL_CMD_PROP_VALUE_INSERTED ? OTBR_ERROR_NONE : OTBR_ERROR_INVALID_STATE;
+        }
+        break;
+    default:
+        break;
+    }
+
+exit:
+    otbrLogResult(error, "HandleResponseForPropInsert, key:%u", mWaitingKeyTable[aTid]);
+    return error;
+}
+
+otbrError NcpSpinel::HandleResponseForPropRemove(spinel_tid_t      aTid,
+                                                 spinel_command_t  aCmd,
+                                                 spinel_prop_key_t aKey,
+                                                 const uint8_t    *aData,
+                                                 uint16_t          aLength)
+{
+    otbrError error = OTBR_ERROR_NONE;
+
+    switch (mWaitingKeyTable[aTid])
+    {
+    case SPINEL_PROP_IPV6_MULTICAST_ADDRESS_TABLE:
+        if (aCmd == SPINEL_CMD_PROP_VALUE_IS)
+        {
+            spinel_status_t status = SPINEL_STATUS_OK;
+
+            VerifyOrExit(aKey == SPINEL_PROP_LAST_STATUS, error = OTBR_ERROR_INVALID_STATE);
+            SuccessOrExit(error = SpinelDataUnpack(aData, aLength, SPINEL_DATATYPE_UINT_PACKED_S, &status));
+            otbrLogInfo("Failed to unsubscribe to multicast address on NCP, error:%s", spinel_status_to_cstr(status));
+        }
+        else
+        {
+            error = aCmd == SPINEL_CMD_PROP_VALUE_REMOVED ? OTBR_ERROR_NONE : OTBR_ERROR_INVALID_STATE;
+        }
+        break;
+    default:
+        break;
+    }
+
+exit:
+    otbrLogResult(error, "HandleResponseForPropRemove, key:%u", mWaitingKeyTable[aTid]);
+    return error;
+}
+
+otbrError NcpSpinel::Ip6MulAddrUpdateSubscription(const otIp6Address &aAddress, bool aIsAdded)
+{
+    otbrError    error        = OTBR_ERROR_NONE;
+    EncodingFunc encodingFunc = [&aAddress](ot::Spinel::Encoder &aEncoder) {
+        return aEncoder.WriteIp6Address(aAddress);
+    };
+
+    if (aIsAdded)
+    {
+        SuccessOrExit(InsertProperty(SPINEL_PROP_IPV6_MULTICAST_ADDRESS_TABLE, encodingFunc),
+                      error = OTBR_ERROR_OPENTHREAD);
+    }
+    else
+    {
+        SuccessOrExit(RemoveProperty(SPINEL_PROP_IPV6_MULTICAST_ADDRESS_TABLE, encodingFunc),
+                      error = OTBR_ERROR_OPENTHREAD);
     }
 
 exit:
@@ -456,19 +634,19 @@ void NcpSpinel::FreeTidTableItem(spinel_tid_t aTid)
     mWaitingKeyTable[aTid] = SPINEL_PROP_LAST_STATUS;
 }
 
-otError NcpSpinel::SetProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc)
+otError NcpSpinel::SendCommand(spinel_command_t aCmd, spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc)
 {
     otError      error  = OT_ERROR_NONE;
     spinel_tid_t tid    = GetNextTid();
     uint8_t      header = SPINEL_HEADER_FLAG | SPINEL_HEADER_IID(mIid) | tid;
 
     VerifyOrExit(tid != 0, error = OT_ERROR_BUSY);
-    SuccessOrExit(error = mEncoder.BeginFrame(header, SPINEL_CMD_PROP_VALUE_SET, aKey));
-    SuccessOrExit(error = aEncodingFunc());
+    SuccessOrExit(error = mEncoder.BeginFrame(header, aCmd, aKey));
+    SuccessOrExit(error = aEncodingFunc(mEncoder));
     SuccessOrExit(error = mEncoder.EndFrame());
     SuccessOrExit(error = SendEncodedFrame());
 
-    mCmdTable[tid]        = SPINEL_CMD_PROP_VALUE_SET;
+    mCmdTable[tid]        = aCmd;
     mWaitingKeyTable[tid] = aKey;
 exit:
     if (error != OT_ERROR_NONE)
@@ -476,6 +654,21 @@ exit:
         FreeTidTableItem(tid);
     }
     return error;
+}
+
+otError NcpSpinel::SetProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc)
+{
+    return SendCommand(SPINEL_CMD_PROP_VALUE_SET, aKey, aEncodingFunc);
+}
+
+otError NcpSpinel::InsertProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc)
+{
+    return SendCommand(SPINEL_CMD_PROP_VALUE_INSERT, aKey, aEncodingFunc);
+}
+
+otError NcpSpinel::RemoveProperty(spinel_prop_key_t aKey, const EncodingFunc &aEncodingFunc)
+{
+    return SendCommand(SPINEL_CMD_PROP_VALUE_REMOVE, aKey, aEncodingFunc);
 }
 
 otError NcpSpinel::SendEncodedFrame(void)
@@ -527,6 +720,131 @@ otError NcpSpinel::ParseIp6AddressTable(const uint8_t               *aBuf,
     }
 
 exit:
+    return error;
+}
+
+otError NcpSpinel::ParseIp6MulticastAddresses(const uint8_t *aBuf, uint16_t aLen, std::vector<Ip6Address> &aAddressList)
+{
+    otError             error = OT_ERROR_NONE;
+    ot::Spinel::Decoder decoder;
+
+    VerifyOrExit(aBuf != nullptr, error = OT_ERROR_INVALID_ARGS);
+
+    decoder.Init(aBuf, aLen);
+
+    while (!decoder.IsAllReadInStruct())
+    {
+        const otIp6Address *addr;
+
+        SuccessOrExit(error = decoder.OpenStruct());
+        SuccessOrExit(error = decoder.ReadIp6Address(addr));
+        aAddressList.emplace_back(Ip6Address(*addr));
+        SuccessOrExit((error = decoder.CloseStruct()));
+    }
+
+exit:
+    return error;
+}
+
+otError NcpSpinel::ParseIp6StreamNet(const uint8_t *aBuf, uint16_t aLen, const uint8_t *&aData, uint16_t &aDataLen)
+{
+    otError             error = OT_ERROR_NONE;
+    ot::Spinel::Decoder decoder;
+
+    VerifyOrExit(aBuf != nullptr, error = OT_ERROR_INVALID_ARGS);
+
+    decoder.Init(aBuf, aLen);
+    error = decoder.ReadDataWithLen(aData, aDataLen);
+
+exit:
+    return error;
+}
+
+otError NcpSpinel::ParseOperationalDatasetTlvs(const uint8_t            *aBuf,
+                                               uint16_t                  aLen,
+                                               otOperationalDatasetTlvs &aDatasetTlvs)
+{
+    otError             error = OT_ERROR_NONE;
+    ot::Spinel::Decoder decoder;
+    const uint8_t      *datasetTlvsData;
+    uint16_t            datasetTlvsLen;
+
+    decoder.Init(aBuf, aLen);
+    SuccessOrExit(error = decoder.ReadData(datasetTlvsData, datasetTlvsLen));
+    VerifyOrExit(datasetTlvsLen <= sizeof(aDatasetTlvs.mTlvs), error = OT_ERROR_PARSE);
+
+    memcpy(aDatasetTlvs.mTlvs, datasetTlvsData, datasetTlvsLen);
+    aDatasetTlvs.mLength = datasetTlvsLen;
+
+exit:
+    return error;
+}
+
+otError NcpSpinel::ParseInfraIfIcmp6Nd(const uint8_t       *aBuf,
+                                       uint8_t              aLen,
+                                       uint32_t            &aInfraIfIndex,
+                                       const otIp6Address *&aAddr,
+                                       const uint8_t      *&aData,
+                                       uint16_t            &aDataLen)
+{
+    otError             error = OT_ERROR_NONE;
+    ot::Spinel::Decoder decoder;
+
+    VerifyOrExit(aBuf != nullptr, error = OT_ERROR_INVALID_ARGS);
+
+    decoder.Init(aBuf, aLen);
+    SuccessOrExit(error = decoder.ReadUint32(aInfraIfIndex));
+    SuccessOrExit(error = decoder.ReadIp6Address(aAddr));
+    SuccessOrExit(error = decoder.ReadDataWithLen(aData, aDataLen));
+
+exit:
+    return error;
+}
+
+otbrError NcpSpinel::SetInfraIf(uint32_t aInfraIfIndex, bool aIsRunning, const std::vector<Ip6Address> &aIp6Addresses)
+{
+    otbrError    error        = OTBR_ERROR_NONE;
+    EncodingFunc encodingFunc = [aInfraIfIndex, aIsRunning, &aIp6Addresses](ot::Spinel::Encoder &aEncoder) {
+        otError error = OT_ERROR_NONE;
+        SuccessOrExit(error = aEncoder.WriteUint32(aInfraIfIndex));
+        SuccessOrExit(error = aEncoder.WriteBool(aIsRunning));
+        for (const Ip6Address &addr : aIp6Addresses)
+        {
+            SuccessOrExit(error = aEncoder.WriteIp6Address(reinterpret_cast<const otIp6Address &>(addr)));
+        }
+
+    exit:
+        return error;
+    };
+
+    SuccessOrExit(SetProperty(SPINEL_PROP_INFRA_IF_STATE, encodingFunc), error = OTBR_ERROR_OPENTHREAD);
+
+exit:
+    return error;
+}
+
+otbrError NcpSpinel::HandleIcmp6Nd(uint32_t          aInfraIfIndex,
+                                   const Ip6Address &aIp6Address,
+                                   const uint8_t    *aData,
+                                   uint16_t          aDataLen)
+{
+    otbrError    error        = OTBR_ERROR_NONE;
+    EncodingFunc encodingFunc = [aInfraIfIndex, &aIp6Address, aData, aDataLen](ot::Spinel::Encoder &aEncoder) {
+        otError error = OT_ERROR_NONE;
+        SuccessOrExit(error = aEncoder.WriteUint32(aInfraIfIndex));
+        SuccessOrExit(error = aEncoder.WriteIp6Address(reinterpret_cast<const otIp6Address &>(aIp6Address)));
+        SuccessOrExit(error = aEncoder.WriteData(aData, aDataLen));
+    exit:
+        return error;
+    };
+
+    SuccessOrExit(SetProperty(SPINEL_PROP_INFRA_IF_RECV_ICMP6, encodingFunc), error = OTBR_ERROR_OPENTHREAD);
+
+exit:
+    if (error != OTBR_ERROR_NONE)
+    {
+        otbrLogWarning("Failed to passthrough ICMP6 ND to NCP, %s", otbrErrorString(error));
+    }
     return error;
 }
 

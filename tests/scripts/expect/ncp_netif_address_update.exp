@@ -62,11 +62,31 @@ expect -re {fd0d:7fc:a1b9:f050(:[0-9a-f]{1,4}){4,4}}
 expect -re {fe80:(:[0-9a-f]{1,4}){4,4}}
 expect eof
 
-# Step 4. Use dbus leave method to let the node leave the network
+# Multicast addresses should contain:
+#   1. ff01::1
+#   2. ff02::1
+#   3. ff02::2
+#   4. ff03::1
+#   5. ff03::2
+spawn ip maddr show dev wpan0
+expect eof
+set maddr_output $expect_out(buffer)
+if {![string match "*ff01::1*" $maddr_output]} { fail "No multicast address ff01::1" }
+if {![string match "*ff02::1*" $maddr_output]} { fail "No multicast address ff02::1" }
+if {![string match "*ff02::2*" $maddr_output]} { fail "No multicast address ff02::2" }
+if {![string match "*ff03::1*" $maddr_output]} { fail "No multicast address ff03::1" }
+if {![string match "*ff03::2*" $maddr_output]} { fail "No multicast address ff03::2" }
+
+# Step 4. Verify the wpan isUp state
+spawn ip link show wpan0
+expect -re {UP}
+expect eof
+
+# Step 5. Use dbus leave method to let the node leave the network
 spawn dbus-send --system --dest=io.openthread.BorderRouter.wpan0 --type=method_call --print-reply /io/openthread/BorderRouter/wpan0 io.openthread.BorderRouter.LeaveNetwork
 expect eof
 
-# Step 5. Verify the addresses on wpan.
+# Step 6. Verify the addresses on wpan.
 # There should be:
 #   1. link local
 spawn ip addr show wpan0
