@@ -74,7 +74,8 @@ private:
 
 class NcpHost : public MainloopProcessor,
                 public ThreadHost,
-                public NcpNetworkProperties
+                public NcpNetworkProperties,
+                public Netif::Dependencies
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
     ,
                 public Mdns::StateObserver
@@ -107,8 +108,12 @@ public:
     void SetChannelMaxPowers(const std::vector<ChannelMaxPower> &aChannelMaxPowers,
                              const AsyncResultReceiver          &aReceiver) override;
 #endif
-    void            AddThreadStateChangedCallback(ThreadStateChangedCallback aCallback) override;
-    void            AddThreadEnabledStateChangedCallback(ThreadEnabledStateCallback aCallback) override;
+    void AddThreadStateChangedCallback(ThreadStateChangedCallback aCallback) override;
+    void AddThreadEnabledStateChangedCallback(ThreadEnabledStateCallback aCallback) override;
+    void SetBorderAgentMeshCoPServiceChangedCallback(BorderAgentMeshCoPServiceChangedCallback aCallback) override;
+    void AddEphemeralKeyStateChangedCallback(EphemeralKeyStateChangedCallback aCallback) override;
+    void SetUdpForwardToHostCallback(UdpForwardToHostCallback aCallback) override;
+
     CoprocessorType GetCoprocessorType(void) override
     {
         return OT_COPROCESSOR_NCP;
@@ -129,16 +134,25 @@ public:
     void SetMdnsPublisher(Mdns::Publisher *aPublisher);
 #endif
 
+    void InitNetifCallbacks(Netif &aNetif);
+
 private:
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
     void HandleMdnsState(Mdns::Publisher::State aState) override;
 #endif
+    otbrError UdpForward(const uint8_t      *aUdpPayload,
+                         uint16_t            aLength,
+                         const otIp6Address &aRemoteAddr,
+                         uint16_t            aRemotePort,
+                         const UdpProxy     &aUdpProxy) override;
+
+    otbrError Ip6Send(const uint8_t *aData, uint16_t aLength) override;
+    otbrError Ip6MulAddrUpdateSubscription(const otIp6Address &aAddress, bool aIsAdded) override;
 
     ot::Spinel::SpinelDriver &mSpinelDriver;
     otPlatformConfig          mConfig;
     NcpSpinel                 mNcpSpinel;
     TaskRunner                mTaskRunner;
-    Netif                     mNetif;
     InfraIf                   mInfraIf;
 };
 

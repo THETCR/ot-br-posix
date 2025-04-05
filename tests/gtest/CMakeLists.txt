@@ -75,8 +75,10 @@ if(OTBR_MDNS)
 endif()
 
 add_executable(otbr-posix-gtest-unit
+    test_cli_daemon.cpp
     test_infra_if.cpp
     test_netif.cpp
+    test_udp_proxy.cpp
 )
 target_link_libraries(otbr-posix-gtest-unit
     otbr-posix
@@ -100,6 +102,7 @@ target_link_libraries(otbr-gtest-host-api
     mbedtls
     otbr-common
     otbr-utils
+    otbr-posix
     GTest::gmock_main
 )
 gtest_discover_tests(otbr-gtest-host-api)
