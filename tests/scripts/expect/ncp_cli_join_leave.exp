@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/usr/bin/expect -f
 #
-#  Copyright (c) 2017-2021, The OpenThread Authors.
+#  Copyright (c) 2025, The OpenThread Authors.
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -27,12 +27,45 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 #
 
-# shellcheck disable=SC2034
-NAT64=1
-DNS64=0
-DHCPV6_PD=0
-NETWORK_MANAGER=0
-BACKBONE_ROUTER=1
-BORDER_ROUTING=1
-WEB_GUI=1
-REST_API=1
+source "tests/scripts/expect/_common.exp"
+
+set dataset "0e080000000000010000000300001435060004001fffe002087d61eb42cdc48d6a0708fd0d07fca1b9f0500510ba088fc2bd6c3b3897f7a10f58263ff3030f4f70656e5468726561642d353234660102524f04109dc023ccd447b12b50997ef68020f19e0c0402a0f7f8"
+
+# Step 1. Start a Thread node and create a Thread network
+spawn_node 1 cli $::env(EXP_OT_CLI_PATH)
+
+send "dataset set active ${dataset}\n"
+expect_line "Done"
+send "ifconfig up\n"
+expect_line "Done"
+send "thread start\n"
+expect_line "Done"
+wait_for "state" "leader"
+expect_line "Done"
+
+
+# Step 2. Start otbr-agent with a NCP
+spawn_node 2 otbr $::env(EXP_OT_NCP_PATH)
+sleep 1
+
+# Step 3. Start ot-ctl and join the network
+spawn_node 3 ctl $::env(EXP_OT_CTL_PATH)
+
+send "dataset set active ${dataset}\n"
+expect "Done"
+send "ifconfig up\n"
+expect "Done"
+send "thread start\n"
+expect "Done"
+wait_for "state" "router|child"
+expect "Done"
+
+# Step 4. Leave the network
+send "thread stop\n"
+expect "Done"
+send "ifconfig down\n"
+expect "Done"
+
+# Step 5. Verify the state of otbr-agent is 'disabled'
+wait_for "state" "disabled"
+expect "Done"

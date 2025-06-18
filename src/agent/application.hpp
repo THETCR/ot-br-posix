@@ -49,6 +49,12 @@
 #if OTBR_ENABLE_BACKBONE_ROUTER
 #include "backbone_router/backbone_agent.hpp"
 #endif
+#if OTBR_ENABLE_SRP_ADVERTISING_PROXY
+#include "sdp_proxy/advertising_proxy.hpp"
+#endif
+#if OTBR_ENABLE_DNSSD_DISCOVERY_PROXY
+#include "sdp_proxy/discovery_proxy.hpp"
+#endif
 #if OTBR_ENABLE_REST_SERVER
 #include "rest/rest_web_server.hpp"
 #endif
@@ -64,6 +70,7 @@
 #if OTBR_ENABLE_DNSSD_PLAT
 #include "host/posix/dnssd.hpp"
 #endif
+#include "host/posix/multicast_routing_manager.hpp"
 #include "host/posix/netif.hpp"
 #include "utils/infra_link_selector.hpp"
 
@@ -273,10 +280,11 @@ private:
     DBus::DependentComponents MakeDBusDependentComponents(void);
 #endif
 
-    std::string            mInterfaceName;
-    const char            *mBackboneInterfaceName;
-    Host::ThreadHost      &mHost;
-    std::unique_ptr<Netif> mNetif;
+    const std::string        mInterfaceName;
+    const std::string        mBackboneInterfaceName;
+    Host::ThreadHost        &mHost;
+    std::unique_ptr<Netif>   mNetif;
+    std::unique_ptr<InfraIf> mInfraIf;
 
 #if OTBR_ENABLE_MDNS
     Mdns::StateSubject               mMdnsStateSubject;
@@ -291,6 +299,7 @@ private:
 #endif
 #if OTBR_ENABLE_BACKBONE_ROUTER
     std::unique_ptr<BackboneRouter::BackboneAgent> mBackboneAgent;
+    std::unique_ptr<MulticastRoutingManager>       mMulticastRoutingManager;
 #endif
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
     std::unique_ptr<AdvertisingProxy> mAdvertisingProxy;

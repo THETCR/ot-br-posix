@@ -40,6 +40,8 @@
 #include "common/mainloop.hpp"
 #include "host/ncp_spinel.hpp"
 #include "host/thread_host.hpp"
+#include "posix/cli_daemon.hpp"
+#include "posix/infra_if.hpp"
 #include "posix/netif.hpp"
 
 namespace otbr {
@@ -57,25 +59,29 @@ public:
     explicit NcpNetworkProperties(void);
 
     // NetworkProperties methods
-    otDeviceRole GetDeviceRole(void) const override;
-    bool         Ip6IsEnabled(void) const override;
-    uint32_t     GetPartitionId(void) const override;
-    void         GetDatasetActiveTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
-    void         GetDatasetPendingTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
+    otDeviceRole             GetDeviceRole(void) const override;
+    bool                     Ip6IsEnabled(void) const override;
+    uint32_t                 GetPartitionId(void) const override;
+    void                     GetDatasetActiveTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
+    void                     GetDatasetPendingTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
+    const otMeshLocalPrefix *GetMeshLocalPrefix(void) const override;
 
 private:
     // PropsObserver methods
     void SetDeviceRole(otDeviceRole aRole) override;
     void SetDatasetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs) override;
+    void SetMeshLocalPrefix(const otMeshLocalPrefix &aMeshLocalPrefix) override;
 
     otDeviceRole             mDeviceRole;
     otOperationalDatasetTlvs mDatasetActiveTlvs;
+    otMeshLocalPrefix        mMeshLocalPrefix;
 };
 
 class NcpHost : public MainloopProcessor,
                 public ThreadHost,
                 public NcpNetworkProperties,
-                public Netif::Dependencies
+                public Netif::Dependencies,
+                public InfraIf::Dependencies
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
     ,
                 public Mdns::StateObserver
@@ -110,9 +116,15 @@ public:
 #endif
     void AddThreadStateChangedCallback(ThreadStateChangedCallback aCallback) override;
     void AddThreadEnabledStateChangedCallback(ThreadEnabledStateCallback aCallback) override;
+#if OTBR_ENABLE_BACKBONE_ROUTER
+    void SetBackboneRouterEnabled(bool aEnabled) override;
+    void SetBackboneRouterMulticastListenerCallback(BackboneRouterMulticastListenerCallback aCallback) override;
+    void SetBackboneRouterStateChangedCallback(BackboneRouterStateChangedCallback aCallback) override;
+#endif
     void SetBorderAgentMeshCoPServiceChangedCallback(BorderAgentMeshCoPServiceChangedCallback aCallback) override;
     void AddEphemeralKeyStateChangedCallback(EphemeralKeyStateChangedCallback aCallback) override;
     void SetUdpForwardToHostCallback(UdpForwardToHostCallback aCallback) override;
+    const otMeshLocalPrefix *GetMeshLocalPrefix(void) const override;
 
     CoprocessorType GetCoprocessorType(void) override
     {
@@ -125,6 +137,10 @@ public:
     }
     void Init(void) override;
     void Deinit(void) override;
+    bool IsInitialized(void) const override
+    {
+        return mIsInitialized;
+    }
 
     // MainloopProcessor methods
     void Update(MainloopContext &aMainloop) override;
@@ -135,6 +151,7 @@ public:
 #endif
 
     void InitNetifCallbacks(Netif &aNetif);
+    void InitInfraIfCallbacks(InfraIf &aInfraIf);
 
 private:
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
@@ -148,12 +165,20 @@ private:
 
     otbrError Ip6Send(const uint8_t *aData, uint16_t aLength) override;
     otbrError Ip6MulAddrUpdateSubscription(const otIp6Address &aAddress, bool aIsAdded) override;
+    otbrError SetInfraIf(uint32_t                       aInfraIfIndex,
+                         bool                           aIsRunning,
+                         const std::vector<Ip6Address> &aIp6Addresses) override;
+    otbrError HandleIcmp6Nd(uint32_t          aInfraIfIndex,
+                            const Ip6Address &aIp6Address,
+                            const uint8_t    *aData,
+                            uint16_t          aDataLen) override;
 
+    bool                      mIsInitialized;
     ot::Spinel::SpinelDriver &mSpinelDriver;
     otPlatformConfig          mConfig;
     NcpSpinel                 mNcpSpinel;
     TaskRunner                mTaskRunner;
-    InfraIf                   mInfraIf;
+    CliDaemon                 mCliDaemon;
 };
 
 } // namespace Host

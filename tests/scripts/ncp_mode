@@ -61,6 +61,9 @@ readonly ABS_TOP_OT_SRCDIR
 ABS_TOP_OT_BUILDDIR="${ABS_TOP_BUILDDIR}/../simulation"
 readonly ABS_TOP_BUILDDIR
 
+OT_CTL="${ABS_TOP_BUILDDIR}/third_party/openthread/repo/src/posix/ot-ctl"
+readonly OT_CTL
+
 OTBR_COLOR_PASS='\033[0;32m'
 readonly OTBR_COLOR_PASS
 
@@ -141,11 +144,12 @@ do_build_ot_simulation()
         -DOT_MTD=OFF -DOT_RCP=OFF -DOT_APP_CLI=OFF -DOT_APP_RCP=OFF \
         -DOT_BORDER_ROUTING=ON -DOT_NCP_INFRA_IF=ON -DOT_SIMULATION_INFRA_IF=OFF \
         -DOT_SRP_SERVER=ON -DOT_SRP_ADV_PROXY=ON -DOT_PLATFORM_DNSSD=ON -DOT_SIMULATION_DNSSD=OFF -DOT_NCP_DNSSD=ON \
-        -DOT_BORDER_AGENT=ON \
+        -DOT_BORDER_AGENT=ON -DOT_BORDER_AGENT_MESHCOP_SERVICE=OFF \
+        -DOT_NCP_CLI_STREAM=ON -DOT_BACKBONE_ROUTER=ON -DOT_BACKBONE_ROUTER_MULTICAST_ROUTING=ON \
         -DBUILD_TESTING=OFF
     OT_CMAKE_BUILD_DIR=${ABS_TOP_OT_BUILDDIR}/cli "${ABS_TOP_OT_SRCDIR}"/script/cmake-build simulation \
         -DOT_MTD=OFF -DOT_RCP=OFF -DOT_APP_NCP=OFF -DOT_APP_RCP=OFF \
-        -DOT_BORDER_ROUTING=OFF \
+        -DOT_BORDER_ROUTING=OFF -DOT_MLR=ON \
         -DBUILD_TESTING=OFF
 }
 
@@ -177,12 +181,11 @@ do_build_otbr_docker()
         "-DOTBR_LINK_METRICS_TELEMETRY=ON"
         "-DOTBR_SRP_ADVERTISING_PROXY=ON"
         "-DOTBR_BORDER_AGENT=ON"
+        "-DOTBR_BACKBONE_ROUTER=ON"
     )
     sudo docker build -t "${OTBR_DOCKER_IMAGE}" \
         -f ./etc/docker/test/Dockerfile . \
         --build-arg NAT64=0 \
-        --build-arg NAT64_SERVICE=0 \
-        --build-arg DNS64=0 \
         --build-arg WEB_GUI=0 \
         --build-arg REST_API=0 \
         --build-arg FIREWALL=0 \
@@ -199,11 +202,14 @@ setup_infraif()
     fi
     sudo sysctl -w net.ipv6.conf.backbone1.accept_ra=2
     sudo sysctl -w net.ipv6.conf.backbone1.accept_ra_rt_info_max_plen=64
+    # Delete the 9101::1/ address to ensure ping through backbone1 use an on-link address.
+    sudo ip addr del 9101::1/64 dev backbone1
 }
 
 test_setup()
 {
     executable_or_die "${OTBR_AGENT_PATH}"
+    executable_or_die "${OT_CTL}"
 
     # Remove flashes
     sudo rm -vrf "${TEST_BASE}/tmp"
@@ -216,6 +222,7 @@ test_setup()
     executable_or_die "${ot_ncp}"
 
     export EXP_OTBR_AGENT_PATH="${OTBR_AGENT_PATH}"
+    export EXP_OT_CTL_PATH="${OT_CTL}"
     export EXP_OT_CLI_PATH="${ot_cli}"
     export EXP_OT_NCP_PATH="${ot_ncp}"
 
@@ -247,6 +254,7 @@ test_teardown()
     write_syslog "EXIT ${EXIT_CODE} - output logs"
 
     sudo pkill -f "${OTBR_AGENT}" || true
+    sudo pkill -f "${OT_CTL}" || true
     sudo pkill -f "${OT_CLI}" || true
     sudo pkill -f "${OT_NCP}" || true
     wait

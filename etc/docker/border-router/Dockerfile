@@ -30,10 +30,10 @@ FROM ubuntu:24.04
 
 ARG GITHUB_REPO="openthread/ot-br-posix"
 ARG GIT_COMMIT="HEAD"
+ARG TARGETARCH
 
-ENV MDNS_RESPONDER_SOURCE_NAME=mDNSResponder-1790.80.10
+ENV MDNS_RESPONDER_SOURCE_NAME=mDNSResponder-2600.100.147
 ENV S6_OVERLAY_VERSION=3.2.0.2
-ENV S6_ARCH=aarch64
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -52,6 +52,11 @@ RUN set -x \
            ninja-build \
            wget \
     \
+    && case "${TARGETARCH}" in \
+         amd64) S6_ARCH="x86_64" ;; \
+         arm64) S6_ARCH="aarch64" ;; \
+         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
+       esac \
     && curl -L -f -s "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
         | tar Jxvf - -C / \
     && curl -L -f -s "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" \
@@ -63,16 +68,6 @@ RUN set -x \
         && mkdir -p $MDNS_RESPONDER_SOURCE_NAME \
         && tar xvf $MDNS_RESPONDER_SOURCE_NAME.tar.gz -C $MDNS_RESPONDER_SOURCE_NAME --strip-components=1 \
         && cd $MDNS_RESPONDER_SOURCE_NAME \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0001-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0002-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0003-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0004-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0005-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0006-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0007-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0008-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0009-*.patch \
-        && patch -p1 < /usr/src/ot-br-posix/third_party/mDNSResponder/0010-*.patch \
         && cd mDNSPosix \
         && make os=linux tls=no \
         && make install os=linux tls=no) \
@@ -85,16 +80,19 @@ RUN set -x \
            -DBUILD_TESTING=OFF \
            -DCMAKE_INSTALL_PREFIX=/usr \
            -DOTBR_BORDER_ROUTING=ON \
+           -DOTBR_BACKBONE_ROUTER=ON \
            -DOTBR_DBUS=OFF \
            -DOTBR_MDNS=mDNSResponder \
            -DOTBR_DNSSD_DISCOVERY_PROXY=ON \
            -DOTBR_SRP_ADVERTISING_PROXY=ON \
            -DOTBR_TREL=ON \
            -DOTBR_NAT64=ON \
+           -DOTBR_DNS_UPSTREAM_QUERY=ON \
            -DOT_POSIX_NAT64_CIDR="192.168.255.0/24" \
            -DOT_FIREWALL=ON \
     && ninja \
     && ninja install \
+    && cp -r etc/docker/border-router/rootfs/. / \
     && apt-get purge -y --auto-remove \
            build-essential \
            ca-certificates \
@@ -105,7 +103,5 @@ RUN set -x \
            wget \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /usr/src/*
-
-COPY etc/docker/border-router/rootfs /
 
 ENTRYPOINT ["/init"]

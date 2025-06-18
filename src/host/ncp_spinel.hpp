@@ -39,6 +39,7 @@
 
 #include <vector>
 
+#include <openthread/backbone_router_ftd.h>
 #include <openthread/dataset.h>
 #include <openthread/error.h>
 #include <openthread/link.h>
@@ -53,6 +54,7 @@
 #include "common/task_runner.hpp"
 #include "common/types.hpp"
 #include "host/async_task.hpp"
+#include "host/posix/cli_daemon.hpp"
 #include "host/posix/infra_if.hpp"
 #include "host/posix/netif.hpp"
 #include "mdns/mdns.hpp"
@@ -81,6 +83,13 @@ public:
     virtual void SetDatasetActiveTlvs(const otOperationalDatasetTlvs &aActiveOpDatasetTlvs) = 0;
 
     /**
+     * Updates the mesh local prefix.
+     *
+     * @param[in] aMeshLocalPrefix  The mesh local prefix.
+     */
+    virtual void SetMeshLocalPrefix(const otIp6NetworkPrefix &aMeshLocalPrefix) = 0;
+
+    /**
      * The destructor.
      */
     virtual ~PropsObserver(void) = default;
@@ -89,7 +98,7 @@ public:
 /**
  * The class provides methods for controlling the Thread stack on the network co-processor (NCP).
  */
-class NcpSpinel : public InfraIf::Dependencies
+class NcpSpinel : public CliDaemon::Dependencies
 {
 public:
     using Ip6AddressTableCallback          = std::function<void(const std::vector<Ip6AddressInfo> &)>;
@@ -98,7 +107,11 @@ public:
     using Ip6ReceiveCallback               = std::function<void(const uint8_t *, uint16_t)>;
     using InfraIfSendIcmp6NdCallback = std::function<void(uint32_t, const otIp6Address &, const uint8_t *, uint16_t)>;
     using BorderAgentMeshCoPServiceChangedCallback = std::function<void(bool, uint16_t, const uint8_t *, uint16_t)>;
+    using CliDaemonOutputCallback                  = std::function<void(const char *)>;
     using UdpForwardSendCallback = std::function<void(const uint8_t *, uint16_t, const otIp6Address &, uint16_t)>;
+    using BackboneRouterMulticastListenerCallback =
+        std::function<void(otBackboneRouterMulticastListenerEvent, Ip6Address)>;
+    using BackboneRouterStateChangedCallback = std::function<void(otBackboneRouterState)>;
 
     /**
      * Constructor.
@@ -209,6 +222,44 @@ public:
     otbrError Ip6MulAddrUpdateSubscription(const otIp6Address &aAddress, bool aIsAdded);
 
     /**
+     * This method sends a CLI command line to the NCP.
+     *
+     * @param[in] aLine  The string of the command line to be input.
+     *
+     * @retval OTBR_ERROR_NONE  The datagram is sent to NCP successfully.
+     * @retval OTBR_ERROR_BUSY  NcpSpinel is busy with other requests.
+     */
+    otbrError InputCommandLine(const char *aLine) override;
+
+    /**
+     * This method sets the infrastructure link interface information on NCP.
+     *
+     * @param[in] aInfraIfIndex  The index of the infrastructure link interface.
+     * @param[in] aIsRunning     Whether the infrastructure link is running.
+     * @param[in] aIp6Addresses  The IPv6 addresses on of the infrastructure link interface.
+     *
+     * @retval OTBR_ERROR_NONE  The infrastructure link interface is set successfully.
+     * @retval OTBR_ERROR_OPENTHREAD  Failed to encode the spinel message.
+     */
+    otbrError SetInfraIf(uint32_t aInfraIfIndex, bool aIsRunning, const std::vector<Ip6Address> &aIp6Addresses);
+
+    /**
+     * This method passes the recevied ICMPv6 ND message to the NCP.
+     *
+     * @param[in] aInfraIfIndex  The index of the infrastructure link interface.
+     * @param[in] aIp6Address    The source IPv6 address of the received ICMPv6 message.
+     * @param[in] aData          The data payload of the received ICMPv6 message.
+     * @param[in] aDatalen       The length of the data payload.
+     *
+     * @retval OTBR_ERROR_NONE  The infrastructure link interface is set successfully.
+     * @retval OTBR_ERROR_OPENTHREAD  Failed to encode the spinel message.
+     */
+    otbrError HandleIcmp6Nd(uint32_t          aInfraIfIndex,
+                            const Ip6Address &aIp6Address,
+                            const uint8_t    *aData,
+                            uint16_t          aDataLen);
+
+    /**
      * This method enableds/disables the Thread network on the NCP.
      *
      * If this method is called again before the previous call completed, no action will be taken.
@@ -258,6 +309,13 @@ public:
     {
         mInfraIfIcmp6NdCallback = aCallback;
     }
+
+    /**
+     * This method sets the function to receive the CLI output from the NCP.
+     *
+     * @param[in] aCallback  The callback to receive the CLI output from the NCP.
+     */
+    void CliDaemonSetOutputCallback(const CliDaemonOutputCallback &aCallback) { mCliDaemonOutputCallback = aCallback; }
 
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
     /**
@@ -323,6 +381,33 @@ public:
     void SetUdpForwardSendCallback(UdpForwardSendCallback aCallback)
     {
         mUdpForwardSendCallback = aCallback;
+    }
+
+    /**
+     * This method enables/disables the Backbone Router.
+     *
+     * @param[in] aEnabled  Whether to enable or disable the Backbone router.
+     */
+    void SetBackboneRouterEnabled(bool aEnabled);
+
+    /**
+     * This method sets the Backbone Router Multicast Listener callback.
+     *
+     * @param[in] aCallback  The Multicast Listener callback.
+     */
+    void SetBackboneRouterStateChangedCallback(const BackboneRouterStateChangedCallback &aCallback)
+    {
+        mBackboneRouterStateChangedCallback = aCallback;
+    }
+
+    /**
+     * This method sets the Backbone Router state change callback.
+     *
+     * @param[in] aCallback  The Backbone Router state change callback.
+     */
+    void SetBackboneRouterMulticastListenerCallback(const BackboneRouterMulticastListenerCallback &aCallback)
+    {
+        mBackboneRouterMulticastListenerCallback = aCallback;
     }
 
 private:
@@ -400,6 +485,7 @@ private:
     otError ParseIp6AddressTable(const uint8_t *aBuf, uint16_t aLength, std::vector<Ip6AddressInfo> &aAddressTable);
     otError ParseIp6MulticastAddresses(const uint8_t *aBuf, uint16_t aLen, std::vector<Ip6Address> &aAddressList);
     otError ParseIp6StreamNet(const uint8_t *aBuf, uint16_t aLen, const uint8_t *&aData, uint16_t &aDataLen);
+    otError ParseStreamCliOutput(const uint8_t *aBuf, uint16_t aLen, const char *&aOutput);
     otError ParseOperationalDatasetTlvs(const uint8_t *aBuf, uint16_t aLen, otOperationalDatasetTlvs &aDatasetTlvs);
     otError ParseInfraIfIcmp6Nd(const uint8_t       *aBuf,
                                 uint8_t              aLen,
@@ -415,14 +501,6 @@ private:
                                   uint16_t            &aPeerPort,
                                   uint16_t            &aLocalPort);
     otError SendDnssdResult(otPlatDnssdRequestId aRequestId, const std::vector<uint8_t> &aCallbackData, otError aError);
-
-    otbrError SetInfraIf(uint32_t                       aInfraIfIndex,
-                         bool                           aIsRunning,
-                         const std::vector<Ip6Address> &aIp6Addresses) override;
-    otbrError HandleIcmp6Nd(uint32_t          aInfraIfIndex,
-                            const Ip6Address &aIp6Address,
-                            const uint8_t    *aData,
-                            uint16_t          aDataLen) override;
 
     ot::Spinel::SpinelDriver *mSpinelDriver;
     uint16_t                  mCmdTidsInUse; ///< Used transaction ids.
@@ -458,7 +536,10 @@ private:
     NetifStateChangedCallback                mNetifStateChangedCallback;
     InfraIfSendIcmp6NdCallback               mInfraIfIcmp6NdCallback;
     BorderAgentMeshCoPServiceChangedCallback mBorderAgentMeshCoPServiceChangedCallback;
+    CliDaemonOutputCallback                  mCliDaemonOutputCallback;
     UdpForwardSendCallback                   mUdpForwardSendCallback;
+    BackboneRouterStateChangedCallback       mBackboneRouterStateChangedCallback;
+    BackboneRouterMulticastListenerCallback  mBackboneRouterMulticastListenerCallback;
 };
 
 } // namespace Host

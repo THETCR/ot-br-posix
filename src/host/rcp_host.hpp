@@ -72,11 +72,12 @@ public:
     explicit OtNetworkProperties(void);
 
     // NetworkProperties methods
-    otDeviceRole GetDeviceRole(void) const override;
-    bool         Ip6IsEnabled(void) const override;
-    uint32_t     GetPartitionId(void) const override;
-    void         GetDatasetActiveTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
-    void         GetDatasetPendingTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
+    otDeviceRole             GetDeviceRole(void) const override;
+    bool                     Ip6IsEnabled(void) const override;
+    uint32_t                 GetPartitionId(void) const override;
+    void                     GetDatasetActiveTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
+    void                     GetDatasetPendingTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const override;
+    const otMeshLocalPrefix *GetMeshLocalPrefix(void) const override;
 
     // Set the otInstance
     void SetInstance(otInstance *aInstance);
@@ -135,6 +136,7 @@ public:
         return mThreadHelper.get();
     }
 
+    bool IsInitialized(void) const override { return mInstance != nullptr; }
     void Update(MainloopContext &aMainloop) override;
     void Process(const MainloopContext &aMainloop) override;
 
@@ -211,6 +213,11 @@ public:
 #endif
     void AddThreadStateChangedCallback(ThreadStateChangedCallback aCallback) override;
     void AddThreadEnabledStateChangedCallback(ThreadEnabledStateCallback aCallback) override;
+#if OTBR_ENABLE_BACKBONE_ROUTER
+    void SetBackboneRouterEnabled(bool aEnabled) override;
+    void SetBackboneRouterMulticastListenerCallback(BackboneRouterMulticastListenerCallback aCallback) override;
+    void SetBackboneRouterStateChangedCallback(BackboneRouterStateChangedCallback aCallback) override;
+#endif // OTBR_ENABLE_BACKBONE_ROUTER
     void SetBorderAgentMeshCoPServiceChangedCallback(BorderAgentMeshCoPServiceChangedCallback aCallback) override;
     void AddEphemeralKeyStateChangedCallback(EphemeralKeyStateChangedCallback aCallback) override;
     void SetUdpForwardToHostCallback(UdpForwardToHostCallback aCallback) override;

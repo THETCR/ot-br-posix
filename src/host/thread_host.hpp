@@ -37,6 +37,7 @@
 #include <functional>
 #include <memory>
 
+#include <openthread/backbone_router_ftd.h>
 #include <openthread/border_agent.h>
 #include <openthread/dataset.h>
 #include <openthread/error.h>
@@ -95,6 +96,13 @@ public:
     virtual void GetDatasetPendingTlvs(otOperationalDatasetTlvs &aDatasetTlvs) const = 0;
 
     /**
+     * Returns the meshlocal prefix.
+     *
+     * @returns The mesh local prefix.
+     */
+    virtual const otMeshLocalPrefix *GetMeshLocalPrefix(void) const = 0;
+
+    /**
      * The destructor.
      */
     virtual ~NetworkProperties(void) = default;
@@ -126,6 +134,9 @@ public:
     using BorderAgentMeshCoPServiceChangedCallback = std::function<void(bool, uint16_t, const uint8_t *, uint16_t)>;
     using EphemeralKeyStateChangedCallback         = std::function<void(otBorderAgentEphemeralKeyState, uint16_t)>;
     using UdpForwardToHostCallback = std::function<void(const uint8_t *, uint16_t, const otIp6Address &, uint16_t)>;
+    using BackboneRouterMulticastListenerCallback =
+        std::function<void(otBackboneRouterMulticastListenerEvent, Ip6Address)>;
+    using BackboneRouterStateChangedCallback = std::function<void(otBackboneRouterState)>;
 
     struct ChannelMaxPower
     {
@@ -276,6 +287,29 @@ public:
      */
     virtual void SetUdpForwardToHostCallback(UdpForwardToHostCallback aCallback) = 0;
 
+#if OTBR_ENABLE_BACKBONE_ROUTER
+    /**
+     * This method enables/disables the Backbone Router.
+     *
+     * @param[in] aEnabled  Whether to enable or disable the Backbone router.
+     */
+    virtual void SetBackboneRouterEnabled(bool aEnabled) = 0;
+
+    /**
+     * This method sets the Backbone Router Multicast Listener callback.
+     *
+     * @param[in] aCallback  The Multicast Listener callback.
+     */
+    virtual void SetBackboneRouterMulticastListenerCallback(BackboneRouterMulticastListenerCallback aCallback) = 0;
+
+    /**
+     * This method sets the Backbone Router state change callback.
+     *
+     * @param[in] aCallback  The Backbone Router state change callback.
+     */
+    virtual void SetBackboneRouterStateChangedCallback(BackboneRouterStateChangedCallback aCallback) = 0;
+#endif // OTBR_ENABLE_BACKBONE_ROUTER
+
     /**
      * Returns the co-processor type.
      */
@@ -302,6 +336,16 @@ public:
      * Deinitializes the Thread controller.
      */
     virtual void Deinit(void) = 0;
+
+    /**
+     * Whether the Thread controller has been initialized.
+     *
+     * All the functional APIs MUST be called when the Thread controller is initialized.
+     *
+     * @retval true   The Thread controller has been initialized.
+     * @retval false  The Thread controller hasn't been initialized.
+     */
+    virtual bool IsInitialized(void) const = 0;
 
     /**
      * The destructor.

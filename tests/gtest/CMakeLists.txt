@@ -29,18 +29,11 @@
 cmake_minimum_required(VERSION 3.14)
 project(openthread-br-gtest)
 
+find_package(GTest CONFIG REQUIRED COMPONENTS GTest GMock Main)
+
 # GoogleTest requires at least C++14
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
-)
-# For Windows: Prevent overriding the parent project's compiler/linker settings
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
 
@@ -75,10 +68,19 @@ if(OTBR_MDNS)
 endif()
 
 add_executable(otbr-posix-gtest-unit
+    ${OPENTHREAD_PROJECT_DIRECTORY}/tests/gtest/fake_platform.cpp
+    fake_posix_platform.cpp
+    test_backbone_multicast_routing.cpp
     test_cli_daemon.cpp
     test_infra_if.cpp
     test_netif.cpp
     test_udp_proxy.cpp
+)
+target_include_directories(otbr-posix-gtest-unit
+    PRIVATE
+        ${OTBR_PROJECT_DIRECTORY}/src
+        ${OPENTHREAD_PROJECT_DIRECTORY}/src/core
+        ${OPENTHREAD_PROJECT_DIRECTORY}/tests/gtest
 )
 target_link_libraries(otbr-posix-gtest-unit
     otbr-posix
@@ -106,3 +108,23 @@ target_link_libraries(otbr-gtest-host-api
     GTest::gmock_main
 )
 gtest_discover_tests(otbr-gtest-host-api)
+
+if(OTBR_TELEMETRY_DATA_API)
+    add_executable(otbr-gtest-telemetry
+        ${OTBR_PROJECT_DIRECTORY}/src/utils/telemetry_retriever_border_agent.cpp
+        test_telemetry.cpp
+    )
+    target_include_directories(otbr-gtest-telemetry
+        PRIVATE
+            ${OTBR_PROJECT_DIRECTORY}/include
+            ${OTBR_PROJECT_DIRECTORY}/src
+            ${OPENTHREAD_PROJECT_DIRECTORY}/include
+            ${OPENTHREAD_PROJECT_DIRECTORY}/tests/gtest
+    )
+    target_link_libraries(otbr-gtest-telemetry
+        otbr-config
+        otbr-proto
+        GTest::gmock_main
+    )
+    gtest_discover_tests(otbr-gtest-telemetry)
+endif()

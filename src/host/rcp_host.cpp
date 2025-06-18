@@ -112,6 +112,11 @@ void OtNetworkProperties::GetDatasetPendingTlvs(otOperationalDatasetTlvs &aDatas
     }
 }
 
+const otMeshLocalPrefix *OtNetworkProperties::GetMeshLocalPrefix(void) const
+{
+    return otThreadGetMeshLocalPrefix(mInstance);
+}
+
 void OtNetworkProperties::SetInstance(otInstance *aInstance)
 {
     mInstance = aInstance;
@@ -417,6 +422,26 @@ void RcpHost::AddThreadEnabledStateChangedCallback(ThreadEnabledStateCallback aC
 {
     mThreadEnabledStateChangedCallbacks.push_back(aCallback);
 }
+
+#if OTBR_ENABLE_BACKBONE_ROUTER
+void RcpHost::SetBackboneRouterEnabled(bool aEnabled)
+{
+    // TODO: Implement this in RCP mode.
+    OTBR_UNUSED_VARIABLE(aEnabled);
+}
+
+void RcpHost::SetBackboneRouterMulticastListenerCallback(BackboneRouterMulticastListenerCallback aCallback)
+{
+    // TODO: Implement this in RCP mode.
+    OTBR_UNUSED_VARIABLE(aCallback);
+}
+
+void RcpHost::SetBackboneRouterStateChangedCallback(BackboneRouterStateChangedCallback aCallback)
+{
+    // TODO: Implement this in RCP mode.
+    OTBR_UNUSED_VARIABLE(aCallback);
+}
+#endif
 
 void RcpHost::Reset(void)
 {

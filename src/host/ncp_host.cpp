@@ -45,10 +45,15 @@ namespace Host {
 
 // =============================== NcpNetworkProperties ===============================
 
+constexpr otMeshLocalPrefix kMeshLocalPrefixInit = {
+    {0xfd, 0xde, 0xad, 0x00, 0xbe, 0xef, 0x00, 0x00},
+};
+
 NcpNetworkProperties::NcpNetworkProperties(void)
     : mDeviceRole(OT_DEVICE_ROLE_DISABLED)
 {
     memset(&mDatasetActiveTlvs, 0, sizeof(mDatasetActiveTlvs));
+    SetMeshLocalPrefix(kMeshLocalPrefixInit);
 }
 
 otDeviceRole NcpNetworkProperties::GetDeviceRole(void) const
@@ -91,11 +96,22 @@ void NcpNetworkProperties::GetDatasetPendingTlvs(otOperationalDatasetTlvs &aData
     OTBR_UNUSED_VARIABLE(aDatasetTlvs);
 }
 
+void NcpNetworkProperties::SetMeshLocalPrefix(const otMeshLocalPrefix &aMeshLocalPrefix)
+{
+    memcpy(mMeshLocalPrefix.m8, aMeshLocalPrefix.m8, sizeof(mMeshLocalPrefix.m8));
+}
+
+const otMeshLocalPrefix *NcpNetworkProperties::GetMeshLocalPrefix(void) const
+{
+    return &mMeshLocalPrefix;
+}
+
 // ===================================== NcpHost ======================================
 
 NcpHost::NcpHost(const char *aInterfaceName, const char *aBackboneInterfaceName, bool aDryRun)
-    : mSpinelDriver(*static_cast<ot::Spinel::SpinelDriver *>(otSysGetSpinelDriver()))
-    , mInfraIf(mNcpSpinel)
+    : mIsInitialized(false)
+    , mSpinelDriver(*static_cast<ot::Spinel::SpinelDriver *>(otSysGetSpinelDriver()))
+    , mCliDaemon(mNcpSpinel)
 {
     memset(&mConfig, 0, sizeof(mConfig));
     mConfig.mInterfaceName         = aInterfaceName;
@@ -113,17 +129,9 @@ void NcpHost::Init(void)
 {
     otSysInit(&mConfig);
     mNcpSpinel.Init(mSpinelDriver, *this);
-    mInfraIf.Init();
+    mCliDaemon.Init(mConfig.mInterfaceName);
 
-    mNcpSpinel.InfraIfSetIcmp6NdSendCallback(
-        [this](uint32_t aInfraIfIndex, const otIp6Address &aAddr, const uint8_t *aData, uint16_t aDataLen) {
-            OTBR_UNUSED_VARIABLE(mInfraIf.SendIcmp6Nd(aInfraIfIndex, aAddr, aData, aDataLen));
-        });
-
-    if (mConfig.mBackboneInterfaceName != nullptr && strlen(mConfig.mBackboneInterfaceName) > 0)
-    {
-        mInfraIf.SetInfraIf(mConfig.mBackboneInterfaceName);
-    }
+    mNcpSpinel.CliDaemonSetOutputCallback([this](const char *aOutput) { mCliDaemon.HandleCommandOutput(aOutput); });
 
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
 #if OTBR_ENABLE_SRP_SERVER_AUTO_ENABLE_MODE
@@ -134,10 +142,12 @@ void NcpHost::Init(void)
     mNcpSpinel.SrpServerSetEnabled(/* aEnabled */ true);
 #endif
 #endif
+    mIsInitialized = true;
 }
 
 void NcpHost::Deinit(void)
 {
+    mIsInitialized = false;
     mNcpSpinel.Deinit();
     otSysDeinit();
 }
@@ -243,6 +253,23 @@ void NcpHost::AddThreadEnabledStateChangedCallback(ThreadEnabledStateCallback aC
     OT_UNUSED_VARIABLE(aCallback);
 }
 
+#if OTBR_ENABLE_BACKBONE_ROUTER
+void NcpHost::SetBackboneRouterEnabled(bool aEnabled)
+{
+    mNcpSpinel.SetBackboneRouterEnabled(aEnabled);
+}
+
+void NcpHost::SetBackboneRouterMulticastListenerCallback(BackboneRouterMulticastListenerCallback aCallback)
+{
+    mNcpSpinel.SetBackboneRouterMulticastListenerCallback(std::move(aCallback));
+}
+
+void NcpHost::SetBackboneRouterStateChangedCallback(BackboneRouterStateChangedCallback aCallback)
+{
+    mNcpSpinel.SetBackboneRouterStateChangedCallback(std::move(aCallback));
+}
+#endif
+
 void NcpHost::SetBorderAgentMeshCoPServiceChangedCallback(BorderAgentMeshCoPServiceChangedCallback aCallback)
 {
     mNcpSpinel.SetBorderAgentMeshCoPServiceChangedCallback(aCallback);
@@ -256,6 +283,7 @@ void NcpHost::AddEphemeralKeyStateChangedCallback(EphemeralKeyStateChangedCallba
 void NcpHost::Process(const MainloopContext &aMainloop)
 {
     mSpinelDriver.Process(&aMainloop);
+    mCliDaemon.Process(aMainloop);
 }
 
 void NcpHost::Update(MainloopContext &aMainloop)
@@ -267,6 +295,8 @@ void NcpHost::Update(MainloopContext &aMainloop)
         aMainloop.mTimeout.tv_sec  = 0;
         aMainloop.mTimeout.tv_usec = 0;
     }
+
+    mCliDaemon.UpdateFdSet(aMainloop);
 }
 
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
@@ -295,6 +325,11 @@ void NcpHost::SetUdpForwardToHostCallback(UdpForwardToHostCallback aCallback)
     mNcpSpinel.SetUdpForwardSendCallback(aCallback);
 }
 
+const otMeshLocalPrefix *NcpHost::GetMeshLocalPrefix(void) const
+{
+    return NcpNetworkProperties::GetMeshLocalPrefix();
+}
+
 void NcpHost::InitNetifCallbacks(Netif &aNetif)
 {
     mNcpSpinel.Ip6SetAddressCallback(
@@ -306,6 +341,14 @@ void NcpHost::InitNetifCallbacks(Netif &aNetif)
         [&aNetif](const uint8_t *aData, uint16_t aLength) { aNetif.Ip6Receive(aData, aLength); });
 }
 
+void NcpHost::InitInfraIfCallbacks(InfraIf &aInfraIf)
+{
+    mNcpSpinel.InfraIfSetIcmp6NdSendCallback(
+        [&aInfraIf](uint32_t aInfraIfIndex, const otIp6Address &aAddr, const uint8_t *aData, uint16_t aDataLen) {
+            OTBR_UNUSED_VARIABLE(aInfraIf.SendIcmp6Nd(aInfraIfIndex, aAddr, aData, aDataLen));
+        });
+}
+
 otbrError NcpHost::Ip6Send(const uint8_t *aData, uint16_t aLength)
 {
     return mNcpSpinel.Ip6Send(aData, aLength);
@@ -314,6 +357,19 @@ otbrError NcpHost::Ip6Send(const uint8_t *aData, uint16_t aLength)
 otbrError NcpHost::Ip6MulAddrUpdateSubscription(const otIp6Address &aAddress, bool aIsAdded)
 {
     return mNcpSpinel.Ip6MulAddrUpdateSubscription(aAddress, aIsAdded);
+}
+
+otbrError NcpHost::SetInfraIf(uint32_t aInfraIfIndex, bool aIsRunning, const std::vector<Ip6Address> &aIp6Addresses)
+{
+    return mNcpSpinel.SetInfraIf(aInfraIfIndex, aIsRunning, aIp6Addresses);
+}
+
+otbrError NcpHost::HandleIcmp6Nd(uint32_t          aInfraIfIndex,
+                                 const Ip6Address &aIp6Address,
+                                 const uint8_t    *aData,
+                                 uint16_t          aDataLen)
+{
+    return mNcpSpinel.HandleIcmp6Nd(aInfraIfIndex, aIp6Address, aData, aDataLen);
 }
 
 } // namespace Host
