@@ -31,6 +31,7 @@
 #include <openthread-br/config.h>
 
 #include <algorithm>
+#include <new>
 #include <vector>
 
 #include <assert.h>
@@ -226,7 +227,7 @@ static int realmain(int argc, char *argv[])
     bool                      syslogDisable     = false;
     bool                      printRadioVersion = false;
     bool                      enableAutoAttach  = true;
-    const char               *restListenAddress = "";
+    const char               *restListenAddress = "::";
     int                       restListenPort    = kPortNumber;
     std::vector<const char *> radioUrls;
     std::vector<const char *> backboneInterfaceNames;
@@ -338,10 +339,10 @@ static int realmain(int argc, char *argv[])
         std::unique_ptr<otbr::Host::ThreadHost> host = otbr::Host::ThreadHost::Create(
             interfaceName, radioUrls, backboneInterfaceName.c_str(), /* aDryRun */ false, enableAutoAttach);
 
-        otbr::Application app(*host, interfaceName, backboneInterfaceName, restListenAddress, restListenPort);
+        otbr::Application app(*host, interfaceName, backboneInterfaceName);
 
         gApp = &app;
-        app.Init();
+        app.Init(restListenAddress, restListenPort);
 #if __linux__
         app.SetErrorCondition(errorCondition);
 #endif
