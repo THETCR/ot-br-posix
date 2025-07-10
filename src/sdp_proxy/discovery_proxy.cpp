@@ -31,11 +31,11 @@
  *   The file implements the DNS-SD Discovery Proxy.
  */
 
-#if OTBR_ENABLE_DNSSD_DISCOVERY_PROXY
-
 #define OTBR_LOG_TAG "DPROXY"
 
 #include "sdp_proxy/discovery_proxy.hpp"
+
+#if OTBR_ENABLE_DNSSD_DISCOVERY_PROXY
 
 #include <algorithm>
 #include <string>
@@ -157,7 +157,7 @@ void DiscoveryProxy::OnDiscoveryProxyUnsubscribe(const char *aFullName)
 
     otbrLogInfo("Unsubscribe: %s", fullName.c_str());
 
-    if (GetServiceSubscriptionCount(nameInfo) == 1)
+    if (GetServiceSubscriptionCount(nameInfo) <= 1)
     {
         if (nameInfo.mHostName.empty())
         {
