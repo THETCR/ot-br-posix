@@ -138,22 +138,22 @@ otbr_install()
     fi
 
     if with NAT64; then
-       options+=(
-           "-DOTBR_DNS_UPSTREAM_QUERY=ON"
-       )
+        options+=(
+            "-DOTBR_DNS_UPSTREAM_QUERY=ON"
+        )
     fi
 
     if with FIREWALL; then
-       options+=(
-           "-DOT_FIREWALL=ON"
+        options+=(
+            "-DOT_FIREWALL=ON"
         )
     else
-       options+=(
-          "-DOT_FIREWALL=OFF"
-       )
+        options+=(
+            "-DOT_FIREWALL=OFF"
+        )
     fi
 
-	options+=("${otbr_options[@]}")
+    options+=("${otbr_options[@]}")
 
     (./script/cmake-build "${options[@]}" \
         && cd "${OTBR_TOP_BUILDDIR}" \

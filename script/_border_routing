@@ -79,9 +79,9 @@ accept_ra_enable()
 dhcpcd_disable_ipv6rs()
 {
     if [ -f $DHCPCD_CONF_FILE ]; then
-      [ -n "$(sudo tail -c1 $DHCPCD_CONF_FILE)" ] && echo '' | sudo tee -a $DHCPCD_CONF_FILE > /dev/null
-      sudo cp $DHCPCD_CONF_FILE $DHCPCD_CONF_BACKUP_FILE
-      sudo tee -a $DHCPCD_CONF_FILE <<- 'EOF'
+        [ -n "$(sudo tail -c1 $DHCPCD_CONF_FILE)" ] && echo '' | sudo tee -a $DHCPCD_CONF_FILE >/dev/null
+        sudo cp $DHCPCD_CONF_FILE $DHCPCD_CONF_BACKUP_FILE
+        sudo tee -a $DHCPCD_CONF_FILE <<-'EOF'
 		noipv6
 		noipv6rs
 EOF
