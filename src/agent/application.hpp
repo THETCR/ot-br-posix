@@ -112,14 +112,12 @@ public:
      */
     explicit Application(Host::ThreadHost  &aHost,
                          const std::string &aInterfaceName,
-                         const std::string &aBackboneInterfaceName,
-                         const std::string &aRestListenAddress,
-                         int                aRestListenPort);
+                         const std::string &aBackboneInterfaceName);
 
     /**
      * This method initializes the Application instance.
      */
-    void Init(void);
+    void Init(const std::string &aRestListenAddress, int aRestListenPort);
 
     /**
      * This method de-initializes the Application instance.
@@ -157,10 +155,7 @@ public:
      *
      * @returns The Publisher object.
      */
-    Mdns::Publisher &GetPublisher(void)
-    {
-        return *mPublisher;
-    }
+    Mdns::Publisher &GetPublisher(void) { return *mPublisher; }
 #endif
 
 #if OTBR_ENABLE_BORDER_AGENT
@@ -169,10 +164,7 @@ public:
      *
      * @returns The border agent.
      */
-    BorderAgent &GetBorderAgent(void)
-    {
-        return mBorderAgent;
-    }
+    BorderAgent &GetBorderAgent(void) { return mBorderAgent; }
 #endif
 
 #if OTBR_ENABLE_BACKBONE_ROUTER
@@ -181,10 +173,7 @@ public:
      *
      * @returns The backbone agent.
      */
-    BackboneRouter::BackboneAgent &GetBackboneAgent(void)
-    {
-        return *mBackboneAgent;
-    }
+    BackboneRouter::BackboneAgent &GetBackboneAgent(void) { return *mBackboneAgent; }
 #endif
 
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY
@@ -193,10 +182,7 @@ public:
      *
      * @returns The advertising proxy.
      */
-    AdvertisingProxy &GetAdvertisingProxy(void)
-    {
-        return *mAdvertisingProxy;
-    }
+    AdvertisingProxy &GetAdvertisingProxy(void) { return *mAdvertisingProxy; }
 #endif
 
 #if OTBR_ENABLE_DNSSD_DISCOVERY_PROXY
@@ -205,22 +191,16 @@ public:
      *
      * @returns The discovery proxy.
      */
-    Dnssd::DiscoveryProxy &GetDiscoveryProxy(void)
-    {
-        return *mDiscoveryProxy;
-    }
+    Dnssd::DiscoveryProxy &GetDiscoveryProxy(void) { return *mDiscoveryProxy; }
 #endif
 
-#if OTBR_ENABLE_TREL
+#if OTBR_ENABLE_TREL_DNSSD
     /**
      * Get the TrelDnssd object the application is using.
      *
      * @returns The TrelDnssd.
      */
-    TrelDnssd::TrelDnssd &GetTrelDnssd(void)
-    {
-        return *mTrelDnssd;
-    }
+    TrelDnssd::TrelDnssd &GetTrelDnssd(void) { return *mTrelDnssd; }
 #endif
 
 #if OTBR_ENABLE_OPENWRT
@@ -229,10 +209,7 @@ public:
      *
      * @returns The UBus agent.
      */
-    ubus::UBusAgent &GetUBusAgent(void)
-    {
-        return *mUbusAgent;
-    }
+    ubus::UBusAgent &GetUBusAgent(void) { return *mUbusAgent; }
 #endif
 
 #if OTBR_ENABLE_REST_SERVER
@@ -241,10 +218,7 @@ public:
      *
      * @returns The rest web server.
      */
-    rest::RestWebServer &GetRestWebServer(void)
-    {
-        return *mRestWebServer;
-    }
+    rest::RestWebServer &GetRestWebServer(void) { return *mRestWebServer; }
 #endif
 
 #if OTBR_ENABLE_DBUS_SERVER
@@ -253,10 +227,7 @@ public:
      *
      * @returns The DBus agent.
      */
-    DBus::DBusAgent &GetDBusAgent(void)
-    {
-        return mDBusAgent;
-    }
+    DBus::DBusAgent &GetDBusAgent(void) { return mDBusAgent; }
 #endif
 
 private:
@@ -265,8 +236,8 @@ private:
 
     static void HandleSignal(int aSignal);
 
-    void CreateRcpMode(const std::string &aRestListenAddress, int aRestListenPort);
-    void InitRcpMode(void);
+    void CreateRcpMode(void);
+    void InitRcpMode(const std::string &aRestListenAddress, int aRestListenPort);
     void DeinitRcpMode(void);
 
     void CreateNcpMode(void);

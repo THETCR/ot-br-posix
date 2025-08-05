@@ -49,13 +49,13 @@ add_executable(otbr-gtest-unit
 target_link_libraries(otbr-gtest-unit
     mbedtls
     otbr-common
-    otbr-ncp
+    otbr-host
     otbr-utils
     GTest::gmock_main
 )
 gtest_discover_tests(otbr-gtest-unit)
 
-if(OTBR_MDNS)
+if(OTBR_MDNS AND NOT OTBR_MDNS STREQUAL "openthread")
     add_executable(otbr-gtest-mdns-subscribe
         test_mdns_subscribe.cpp
     )
@@ -105,6 +105,7 @@ target_link_libraries(otbr-gtest-host-api
     otbr-common
     otbr-utils
     otbr-posix
+    otbr-host
     GTest::gmock_main
 )
 gtest_discover_tests(otbr-gtest-host-api)

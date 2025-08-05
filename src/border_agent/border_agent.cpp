@@ -88,8 +88,12 @@ static const char kBorderAgentEpskcServiceType[] = "_meshcop-e._udp"; ///< Borde
 static constexpr int kBorderAgentServiceDummyPort = 49152;
 static constexpr int kEpskcRandomGenLen           = 8;
 
+#if OTBR_ENABLE_BORDER_AGENT_MESHCOP_SERVICE
 BorderAgent::BorderAgent(Mdns::Publisher &aPublisher)
     : mPublisher(aPublisher)
+#else
+BorderAgent::BorderAgent(void)
+#endif
 {
     ClearState();
 }
@@ -285,9 +289,7 @@ exit:
     return;
 }
 
-void BorderAgent::HandleBorderAgentMeshCoPServiceChanged(bool                        aIsActive,
-                                                         uint16_t                    aPort,
-                                                         const std::vector<uint8_t> &aOtTxtData)
+void BorderAgent::HandleBorderAgentMeshCoPServiceChanged(bool aIsActive, uint16_t aPort, const TxtData &aOtTxtData)
 {
     if (aIsActive != mBaIsActive || aPort != mMeshCoPUdpPort)
     {
@@ -375,6 +377,21 @@ void BorderAgent::EncodeVendorTxtData(const VendorTxtEntries &aVendorEntries)
 
         assert(error == OTBR_ERROR_NONE);
         OTBR_UNUSED_VARIABLE(error);
+    }
+
+    if (mVendorTxtDataChangedCallback != nullptr)
+    {
+        mVendorTxtDataChangedCallback(mVendorTxtData);
+    }
+}
+
+void BorderAgent::SetVendorTxtDataChangedCallback(VendorTxtDataChangedCallback aCallback)
+{
+    mVendorTxtDataChangedCallback = aCallback;
+
+    if (mVendorTxtDataChangedCallback != nullptr)
+    {
+        mVendorTxtDataChangedCallback(mVendorTxtData);
     }
 }
 

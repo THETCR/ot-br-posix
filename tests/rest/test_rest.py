@@ -34,7 +34,7 @@ import json
 import re
 from threading import Thread
 
-rest_api_addr = "http://0.0.0.0:8081"
+rest_api_addr = "http://127.0.0.1:8081"
 
 
 def assert_is_ipv6_address(string):
@@ -145,7 +145,7 @@ def diagnostics_check(data):
             assert (key in leaderdata)
             assert (type(leaderdata[key]) == int)
 
-        assert (re.match(r'^[A-F0-9]{12}$', diag["NetworkData"]) is not None)
+        assert (re.match(r'^[A-F0-9]{44}$', diag["NetworkData"]) is not None)
 
         ip6_address_list = diag["IP6AddressList"]
         assert (type(ip6_address_list) == list)
