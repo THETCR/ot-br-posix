@@ -1102,6 +1102,7 @@ void RestWebServer::Init(const std::string &aRestListenAddress, int aRestListenP
     mServerThread = std::thread([aRestListenAddress, aRestListenPort, this]() -> void {
         otbrLogInfo("RestWebServer listening on %s:%u", aRestListenAddress.c_str(), aRestListenPort);
         mServer.set_ipv6_v6only(false);
+        mServer.set_default_headers({{ "Access-Control-Allow-Origin", "*" }});
         mServer.listen(aRestListenAddress, aRestListenPort);
     });
 }
