@@ -140,12 +140,13 @@ public:
     void Update(MainloopContext &aMainloop) override;
     void Process(const MainloopContext &aMainloop) override;
 
-#if OTBR_ENABLE_SRP_ADVERTISING_PROXY
+#if OTBR_ENABLE_MDNS
     void SetMdnsPublisher(Mdns::Publisher *aPublisher);
 #endif
 
     void InitNetifCallbacks(Netif &aNetif);
     void InitInfraIfCallbacks(InfraIf &aInfraIf);
+    void SetHostPowerState(uint8_t aPowerState, const AsyncResultReceiver &aReceiver);
 
 private:
 #if OTBR_ENABLE_SRP_ADVERTISING_PROXY

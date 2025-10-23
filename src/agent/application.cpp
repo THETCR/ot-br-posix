@@ -229,7 +229,7 @@ void Application::CreateRcpMode(void)
     mUbusAgent = MakeUnique<ubus::UBusAgent>(rcpHost);
 #endif
 #if OTBR_ENABLE_REST_SERVER
-    mRestWebServer = MakeUnique<rest::RestWebServer>(rcpHost);
+    mRestWebServer = std::make_shared<rest::RestWebServer>(rcpHost);
 #endif
 #if OTBR_ENABLE_VENDOR_SERVER
     mVendorServer = vendor::VendorServer::newInstance(*this);
@@ -359,7 +359,7 @@ void Application::InitNcpMode(void)
 #if OTBR_ENABLE_BORDER_AGENT && OTBR_ENABLE_BORDER_AGENT_MESHCOP_SERVICE
     mMdnsStateSubject.AddObserver(mBorderAgent);
 #endif
-#if OTBR_ENABLE_SRP_ADVERTISING_PROXY || (OTBR_ENABLE_BORDER_AGENT && OTBR_ENABLE_BORDER_AGENT_MESHCOP_SERVICE)
+#if OTBR_ENABLE_MDNS
     ncpHost.SetMdnsPublisher(mPublisher.get());
     mPublisher->Start();
 #endif
@@ -383,10 +383,13 @@ void Application::InitNcpMode(void)
             OTBR_UNUSED_VARIABLE(aLength);
 #endif
         });
-    mHost.SetUdpForwardToHostCallback(
-        [this](const uint8_t *aUdpPayload, uint16_t aLength, const otIp6Address &aPeerAddr, uint16_t aPeerPort) {
+    mHost.SetUdpForwardToHostCallback([this](const uint8_t *aUdpPayload, uint16_t aLength,
+                                             const otIp6Address &aPeerAddr, uint16_t aPeerPort, uint16_t aLocalPort) {
+        if (aLocalPort == mBorderAgentUdpProxy.GetThreadPort())
+        {
             mBorderAgentUdpProxy.SendToPeer(aUdpPayload, aLength, aPeerAddr, aPeerPort);
-        });
+        }
+    });
     SetBorderAgentOnInitState();
 #endif
 #if OTBR_ENABLE_BACKBONE_ROUTER

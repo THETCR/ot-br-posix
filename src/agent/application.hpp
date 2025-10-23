@@ -70,6 +70,9 @@
 #if OTBR_ENABLE_DNSSD_PLAT
 #include "host/posix/dnssd.hpp"
 #endif
+#if OTBR_ENABLE_TREL_DNSSD
+#include "trel_dnssd/trel_dnssd.hpp"
+#endif
 #include "host/posix/multicast_routing_manager.hpp"
 #include "host/posix/netif.hpp"
 #include "utils/infra_link_selector.hpp"
@@ -285,7 +288,7 @@ private:
     std::unique_ptr<ubus::UBusAgent> mUbusAgent;
 #endif
 #if OTBR_ENABLE_REST_SERVER
-    std::unique_ptr<rest::RestWebServer> mRestWebServer;
+    std::shared_ptr<rest::RestWebServer> mRestWebServer;
 #endif
 #if OTBR_ENABLE_DBUS_SERVER
     DBus::DBusAgent mDBusAgent;

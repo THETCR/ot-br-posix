@@ -355,7 +355,11 @@ void NcpSpinel::HandleNotification(const uint8_t *aFrame, uint16_t aLength)
     }
 
 exit:
-    otbrLogResult(error, "%s", __FUNCTION__);
+    if (error != OTBR_ERROR_NONE)
+    {
+        otbrLogWarning("Failed to handle notification: %s", otbrErrorString(error));
+    }
+    return;
 }
 
 void NcpSpinel::HandleResponse(spinel_tid_t aTid, const uint8_t *aFrame, uint16_t aLength)
@@ -577,7 +581,7 @@ void NcpSpinel::HandleValueIs(spinel_prop_key_t aKey, const uint8_t *aBuffer, ui
 
         SuccessOrExit(ParseUdpForwardStream(aBuffer, aLength, udpPayload, length, peerAddress, peerPort, localPort),
                       error = OTBR_ERROR_PARSE);
-        SafeInvoke(mUdpForwardSendCallback, udpPayload, length, *peerAddress, peerPort);
+        SafeInvoke(mUdpForwardSendCallback, udpPayload, length, *peerAddress, peerPort, localPort);
 
         break;
     }
@@ -588,7 +592,7 @@ void NcpSpinel::HandleValueIs(spinel_prop_key_t aKey, const uint8_t *aBuffer, ui
     }
 
 exit:
-    otbrLogResult(error, "NcpSpinel: %s", __FUNCTION__);
+    otbrLogResult(error, "%s, Property:%s", __FUNCTION__, spinel_prop_key_to_cstr(aKey));
     return;
 }
 
@@ -898,6 +902,11 @@ otbrError NcpSpinel::HandleResponseForPropSet(spinel_tid_t      aTid,
         otbrLogInfo("Update dnssd state result: %s", spinel_status_to_cstr(status));
         break;
 
+    case SPINEL_PROP_HOST_POWER_STATE:
+        CallAndClear(mSetHostPowerStateTask, OT_ERROR_NONE);
+        otbrLogInfo("Set Host Power result: %s", spinel_status_to_cstr(status));
+        break;
+
     default:
         VerifyOrExit(aKey == mWaitingKeyTable[aTid], error = OTBR_ERROR_INVALID_STATE);
         break;
@@ -1046,6 +1055,7 @@ exit:
     {
         FreeTidTableItem(tid);
     }
+
     return error;
 }
 
@@ -1349,6 +1359,25 @@ void NcpSpinel::SetBackboneRouterEnabled(bool aEnabled)
     if (error != OT_ERROR_NONE)
     {
         otbrLogWarning("Failed to call BackboneRouterSetEnabled, %s", otThreadErrorToString(error));
+    }
+}
+
+void NcpSpinel::SetHostPowerState(uint8_t aState, AsyncTaskPtr aAsyncTask)
+{
+    otError      error        = OT_ERROR_NONE;
+    EncodingFunc encodingFunc = [aState](ot::Spinel::Encoder &aEncoder) { return aEncoder.WriteUint8(aState); };
+
+    VerifyOrExit(mSetHostPowerStateTask == nullptr, error = OT_ERROR_BUSY);
+    VerifyOrExit(aState <= SPINEL_HOST_POWER_STATE_ONLINE, error = OT_ERROR_INVALID_ARGS);
+
+    SuccessOrExit(error = SetProperty(SPINEL_PROP_HOST_POWER_STATE, encodingFunc));
+    mSetHostPowerStateTask = aAsyncTask;
+
+exit:
+    if (error != OT_ERROR_NONE)
+    {
+        mTaskRunner.Post(
+            [aAsyncTask, error](void) { aAsyncTask->SetResult(error, "Failed to set host power state!"); });
     }
 }
 

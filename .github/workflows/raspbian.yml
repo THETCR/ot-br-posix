@@ -43,7 +43,7 @@ concurrency:
 jobs:
 
   raspbian-check:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +55,7 @@ jobs:
       IMAGE_URL: ${{ matrix.image_url }}
       BUILD_TARGET: raspbian-gcc
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       with:
         submodules: recursive
     - name: Bootstrap

@@ -50,6 +50,7 @@
 #include "common/logging.hpp"
 #include "common/time.hpp"
 #include "utils/dns_utils.hpp"
+#include "utils/string_utils.hpp"
 
 namespace otbr {
 
@@ -513,6 +514,10 @@ otbrError PublisherMDnsSd::DnssdServiceRegistration::Register(void)
 
     VerifyOrExit(GetPublisher().IsStarted(), dnsError = kDNSServiceErr_ServiceNotRunning);
 
+    // Note: If the mDNSResponder service is in some bad state, `DNSServiceRegister` may block here for 60 seconds at
+    // most.
+    // TODO: Abort on `Timeout` error, as it indicates an unresponsive mDNSResponder. This may require removing
+    // `kDNSServiceErr_Timeout` from `IsRetryableError` and adding specific handling for it.
     dnsError = DNSServiceRegister(&mServiceRef, kDNSServiceFlagsNoAutoRename, kDNSServiceInterfaceIndexAny,
                                   serviceNameCString, regType.c_str(),
                                   /* domain */ nullptr, hostNameCString, htons(mPort), mTxtData.size(), mTxtData.data(),
@@ -1190,6 +1195,7 @@ void PublisherMDnsSd::ServiceSubscription::HandleBrowseResult(DNSServiceRef     
     else
     {
         mPublisher.OnServiceRemoved(aInterfaceIndex, mType, aInstanceName);
+        Remove(aInterfaceIndex, aInstanceName, aType, aDomain);
     }
 
 exit:
@@ -1214,9 +1220,31 @@ void PublisherMDnsSd::ServiceSubscription::Resolve(uint32_t           aInterface
                                                    const std::string &aType,
                                                    const std::string &aDomain)
 {
+    Remove(aInterfaceIndex, aInstanceName, aType, aDomain);
+
     mResolvingInstances.push_back(
         std::make_shared<ServiceInstanceResolution>(*this, aInstanceName, aType, aDomain, aInterfaceIndex));
     mResolvingInstances.back()->Resolve();
+}
+
+void PublisherMDnsSd::ServiceSubscription::Remove(uint32_t           aInterfaceIndex,
+                                                  const std::string &aInstanceName,
+                                                  const std::string &aType,
+                                                  const std::string &aDomain)
+{
+    otbrLogDebug("Removing service instance resolution for %s %s inf %u ", aInstanceName.c_str(), aType.c_str(),
+                 aInterfaceIndex);
+
+    const auto it = std::find_if(mResolvingInstances.begin(), mResolvingInstances.end(),
+                                 [aInterfaceIndex, &aInstanceName, &aType,
+                                  &aDomain](const std::shared_ptr<ServiceInstanceResolution> &aServiceResolution) {
+                                     return aServiceResolution->Matches(aInterfaceIndex, aInstanceName, aType, aDomain);
+                                 });
+
+    if (it != mResolvingInstances.end())
+    {
+        mResolvingInstances.erase(it);
+    }
 }
 
 void PublisherMDnsSd::ServiceSubscription::UpdateAll(MainloopContext &aMainloop) const
@@ -1238,6 +1266,16 @@ void PublisherMDnsSd::ServiceSubscription::ProcessAll(const MainloopContext     
     {
         instance->Process(aMainloop, aReadyServices);
     }
+}
+
+bool PublisherMDnsSd::ServiceInstanceResolution::Matches(uint32_t           aInterfaceIndex,
+                                                         const std::string &aInstanceName,
+                                                         const std::string &aType,
+                                                         const std::string &aDomain) const
+{
+    return (mNetifIndex == aInterfaceIndex) && otbr::StringUtils::EqualCaseInsensitive(mInstanceName, aInstanceName) &&
+           otbr::StringUtils::EqualCaseInsensitive(mType, aType) &&
+           otbr::StringUtils::EqualCaseInsensitive(mDomain, aDomain);
 }
 
 void PublisherMDnsSd::ServiceInstanceResolution::Release(void)
