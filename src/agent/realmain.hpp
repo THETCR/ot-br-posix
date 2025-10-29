@@ -26,36 +26,41 @@
  *    POSSIBILITY OF SUCH DAMAGE.
  */
 
-#if OTBR_ENABLE_TELEMETRY_DATA_API && OTBR_ENABLE_BORDER_AGENT
+/**
+ * @file
+ *   This file includes definition for the real main method of the OTBR Agent.
+ */
 
-#include <utility>
-#include <vector>
+#ifndef OTBR_AGENT_REAL_MAIN_HPP_
+#define OTBR_AGENT_REAL_MAIN_HPP_
 
-#include <openthread/history_tracker.h>
-#include <openthread/instance.h>
-
-#include "common/logging.hpp"
-
-#include "proto/thread_telemetry.pb.h"
+#include <stdint.h>
 
 namespace otbr {
-namespace TelemetryRetriever {
 
-class BorderAgent
-{
-public:
-    explicit BorderAgent(otInstance *aInstance);
-    void RetrieveEpskcJourneyInfo(threadnetwork::TelemetryData::BorderAgentInfo *aBorderAgentInfo);
+/**
+ * @addtogroup border-router-agent
+ *
+ * @brief
+ *   This module includes definition for the real main method of the OTBR Agent.
+ *
+ * @{
+ */
 
-private:
-    bool IsEpskcDeactivationEvent(const otHistoryTrackerBorderAgentEpskcEvent &aEvent);
-    std::vector<std::pair<otHistoryTrackerBorderAgentEpskcEvent, uint32_t>> GetUnretrievedEpskcEvents(void);
+/**
+ * This method runs the real main method of the OTBR Agent until exit.
+ *
+ * @param[in] argc  The number of arguments.
+ * @param[in] argv  A pointer to an argument list.
+ *
+ * @returns The exit code.
+ */
+int RealMain(int argc, char *argv[]);
 
-    otInstance *mInstance;
-    uint32_t    mEpskcLastRetrievedTimestamp;
-};
+/**
+ * @}
+ */
 
-} // namespace TelemetryRetriever
 } // namespace otbr
 
-#endif // OTBR_ENABLE_TELEMETRY_DATA_API && OTBR_ENABLE_BORDER_AGENT
+#endif // OTBR_AGENT_REAL_MAIN_HPP_

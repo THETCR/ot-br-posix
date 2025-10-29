@@ -198,7 +198,6 @@ void CheckTrelInfo(ThreadApiDBus *aApi)
     otbr::DBus::TrelInfo trelInfo;
 
     TEST_ASSERT(aApi->GetTrelInfo(trelInfo) == OTBR_ERROR_NONE);
-    TEST_ASSERT(trelInfo.mEnabled);
     TEST_ASSERT(trelInfo.mNumTrelPeers == 0);
     TEST_ASSERT(trelInfo.mTrelCounters.mTxPackets == 0);
     TEST_ASSERT(trelInfo.mTrelCounters.mTxBytes == 0);
@@ -284,6 +283,12 @@ void CheckEphemeralKey(ThreadApiDBus *aApi)
     TEST_ASSERT(enabled == true);
 }
 
+void CheckBorderAgent(ThreadApiDBus *aApi)
+{
+    TEST_ASSERT(aApi->SetBorderAgentEnabled(false) == OTBR_ERROR_NONE);
+    TEST_ASSERT(aApi->SetBorderAgentEnabled(true) == OTBR_ERROR_NONE);
+}
+
 #if OTBR_ENABLE_TELEMETRY_DATA_API
 
 void CheckBorderAgentInfo(const threadnetwork::TelemetryData_BorderAgentInfo &aBorderAgentInfo)
@@ -346,7 +351,6 @@ void CheckTelemetryData(ThreadApiDBus *aApi)
     TEST_ASSERT(telemetryData.wpan_border_router().dns_server().response_counters().server_failure_count() == 0);
 #endif
 #if OTBR_ENABLE_TREL
-    TEST_ASSERT(telemetryData.wpan_border_router().trel_info().is_trel_enabled());
     TEST_ASSERT(telemetryData.wpan_border_router().trel_info().has_counters());
     TEST_ASSERT(telemetryData.wpan_border_router().trel_info().counters().trel_tx_packets() == 0);
     TEST_ASSERT(telemetryData.wpan_border_router().trel_info().counters().trel_tx_bytes() == 0);
@@ -363,6 +367,7 @@ void CheckTelemetryData(ThreadApiDBus *aApi)
     TEST_ASSERT(telemetryData.wpan_border_router().external_route_info().has_default_route_added() == false);
     TEST_ASSERT(telemetryData.wpan_border_router().external_route_info().has_ula_route_added());
     TEST_ASSERT(telemetryData.wpan_border_router().external_route_info().has_others_route_added() == false);
+    TEST_ASSERT(telemetryData.wpan_border_router().multi_ail_detected() == false);
 #endif
 #if !OTBR_ENABLE_MDNS_OPENTHREAD
     TEST_ASSERT(telemetryData.wpan_border_router().mdns().service_registration_responses().success_count() > 0);
@@ -487,7 +492,8 @@ int main()
                         {
                             std::string                           name;
                             uint64_t                              extAddress = 0;
-                            uint16_t                              rloc16     = 0xffff;
+                            std::vector<uint8_t>                  borderAgentId;
+                            uint16_t                              rloc16 = 0xffff;
                             std::vector<uint8_t>                  networkData;
                             std::vector<uint8_t>                  stableNetworkData;
                             int8_t                                rssi;
@@ -503,6 +509,8 @@ int main()
                             TEST_ASSERT(api->GetExtPanId(extpanidCheck) == OTBR_ERROR_NONE);
                             TEST_ASSERT(api->GetRloc16(rloc16) == OTBR_ERROR_NONE);
                             TEST_ASSERT(api->GetExtendedAddress(extAddress) == OTBR_ERROR_NONE);
+                            TEST_ASSERT(api->GetBorderAgentId(borderAgentId) == OTBR_ERROR_NONE);
+                            TEST_ASSERT(borderAgentId.size() == 16);
                             TEST_ASSERT(api->GetNetworkData(networkData) == OTBR_ERROR_NONE);
                             TEST_ASSERT(api->GetStableNetworkData(stableNetworkData) == OTBR_ERROR_NONE);
                             TEST_ASSERT(api->GetChildTable(childTable) == OTBR_ERROR_NONE);
@@ -521,6 +529,7 @@ int main()
                             CheckDnssdCounters(api.get());
                             CheckNat64(api.get());
                             CheckEphemeralKey(api.get());
+                            CheckBorderAgent(api.get());
 #if OTBR_ENABLE_TELEMETRY_DATA_API
                             CheckTelemetryData(api.get());
 #endif

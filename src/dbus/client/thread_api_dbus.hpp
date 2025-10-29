@@ -524,6 +524,17 @@ public:
     ClientError GetExtendedAddress(uint64_t &aExtendedAddress);
 
     /**
+     * This method gets the 16 byte border agent id
+     *
+     * @param[out] aBorderAgentId  The border agent id
+     *
+     * @retval ERROR_NONE  Successfully performed the dbus function call
+     * @retval ERROR_DBUS  dbus encode/decode error
+     * @retval ...         OpenThread defined error value otherwise
+     */
+    ClientError GetBorderAgentId(std::vector<uint8_t> &aBorderAgentId);
+
+    /**
      * This method gets the node's router id.
      *
      * @param[out] aRouterId  The router id.
@@ -777,6 +788,17 @@ public:
      * @returns The network interface name.
      */
     std::string GetInterfaceName(void);
+
+    /**
+     * This method enables/disables the Border Agent.
+     *
+     * @param[in] aEnabled  Whether to enable the Border Agent.
+     *
+     * @retval ERROR_NONE  Successfully performed the dbus function call
+     * @retval ERROR_DBUS  dbus encode/decode error
+     * @retval ...         OpenThread defined error value otherwise
+     */
+    ClientError SetBorderAgentEnabled(bool aEnabled);
 
     /**
      * This method sets multiple vendor-specific entries for the TXT record of the MeshCoP service.

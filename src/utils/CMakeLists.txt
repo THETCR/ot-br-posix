@@ -28,6 +28,7 @@
 
 add_library(otbr-utils
     crc16.cpp
+    csprng.cpp
     dns_utils.cpp
     hex.cpp
     infra_link_selector.cpp
@@ -41,7 +42,5 @@ add_library(otbr-utils
 
 target_link_libraries(otbr-utils PUBLIC
     otbr-common
-    $<$<BOOL:${OTBR_FEATURE_FLAGS}>:otbr-proto>
-    $<$<BOOL:${OTBR_TELEMETRY_DATA_API}>:otbr-proto>
     mbedtls
 )

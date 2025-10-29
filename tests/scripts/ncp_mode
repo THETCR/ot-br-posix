@@ -49,6 +49,9 @@ readonly OT_NCP
 OTBR_DOCKER_IMAGE="${OTBR_DOCKER_IMAGE:-otbr-ncp}"
 readonly OTBR_DOCKER_IMAGE
 
+OTBR_MDNS="${OTBR_MDNS:-avahi}"
+readonly OTBR_MDNS
+
 ABS_TOP_BUILDDIR="$(cd "${top_builddir:-"${SCRIPT_DIR}"/../../}" && pwd)"
 readonly ABS_TOP_BUILDDIR
 
@@ -146,6 +149,7 @@ do_build_ot_simulation()
         -DOT_SRP_SERVER=ON -DOT_SRP_ADV_PROXY=ON -DOT_PLATFORM_DNSSD=ON -DOT_SIMULATION_DNSSD=OFF -DOT_NCP_DNSSD=ON \
         -DOT_BORDER_AGENT=ON -DOT_BORDER_AGENT_MESHCOP_SERVICE=OFF \
         -DOT_NCP_CLI_STREAM=ON -DOT_BACKBONE_ROUTER=ON -DOT_BACKBONE_ROUTER_MULTICAST_ROUTING=ON \
+        -DOT_LOG_LEVEL=INFO -DOT_LOG_OUTPUT=PLATFORM_DEFINED \
         -DBUILD_TESTING=OFF
     OT_CMAKE_BUILD_DIR=${ABS_TOP_OT_BUILDDIR}/cli "${ABS_TOP_OT_SRCDIR}"/script/cmake-build simulation \
         -DOT_MTD=OFF -DOT_RCP=OFF -DOT_APP_NCP=OFF -DOT_APP_RCP=OFF \
@@ -234,6 +238,9 @@ test_setup()
     sudo cp "${OTBR_DBUS_CONF}" /etc/dbus-1/system.d
     sudo chmod +r /etc/dbus-1/system.d/otbr-agent.conf
     sudo systemctl reload dbus
+    if [[ ${OTBR_MDNS} == "mDNSResponder" ]]; then
+        sudo systemctl restart mdns
+    fi
 
     write_syslog "AGENT: kill old"
     sudo killall "${OTBR_AGENT}" || true
@@ -289,6 +296,7 @@ otbr_exec_expect_script()
         sudo killall ot-ncp-mtd || true
         sudo rm -rf tmp
         mkdir tmp
+        # avahi-browser is used to discover the service and verify in the test cases no matter what OTBR_MDNS is.
         restart_avahi_daemon
         {
             sudo -E expect -df "${script}" 2>"${log_file}"
